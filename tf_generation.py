@@ -1,7 +1,6 @@
 from classes import PLetter, Neg, Conj, InterpretationFunc, check_type
 import string
 import random
-from itertools import chain, combinations
 from pathlib import Path
 import argparse
 import pickle
@@ -16,6 +15,8 @@ n_worlds = None
 act_world = set()
 alt_worlds = set()
 letters = []
+act_list = [] # sorted list of act_world letters, for indexing purposes
+nact_list = [] # sorted list of letters NOT in act_world
 Tc,Fc,Ts,Fs = {}, {}, {}, {}
 true_cache, false_cache = {}, {}
 
@@ -29,7 +30,7 @@ def true(i,d):
   if (i,d) in true_cache:
     return true_cache[(i,d)]
   if d == 1:
-    phi = PLetter(list(act_world)[i]) # depth 1, can only be prop. letters
+    phi = PLetter(act_list[i]) # depth 1, can only be prop. letters
 
   elif i < Fc[d-1]: # inside negation block
       phi = Neg(false(i, d-1))
@@ -62,7 +63,7 @@ def false(i,d):
     return false_cache[(i,d)]
 
   if d == 1:
-    phi = PLetter(list(set(letters)-act_world)[i])
+    phi = PLetter(nact_list[i])
 
   elif i < Tc[d-1]: # negation block
     phi = Neg(true(i,d-1))
@@ -126,6 +127,47 @@ def false_le(i):
     e+=1
   return false(i,e)
 
+
+# so i can use it elsewhere:
+
+def build_index_tables(max_depth_):
+  # (re)builds Tc, Fc, Ts, Fs up to max_depth_, based on the current act_world/number_pl.
+  # Also clears the true()/false() caches, since they're indexed by (i,d) and would
+  # otherwise mix formulas from different act_worlds together.
+  global Tc, Fc, Ts, Fs, true_cache, false_cache, max_depth
+ 
+  max_depth = max_depth_
+ 
+  Tc = {1: len(act_world)}
+  Fc = {1: number_pl - len(act_world)}
+  Ts = {0: 0, 1: Tc[1]}
+  Fs = {0: 0, 1: Fc[1]}
+ 
+  for d in range(2, max_depth + 1):
+    Tc[d] = Fc[d-1] + Tc[d - 1] * Ts[d - 1] + Ts[d - 2] * Tc[d - 1]
+    Ts[d] = Ts[d - 1] + Tc[d]
+ 
+    Fc[d] = Tc[d-1] + Fc[d-1] * Fs[d-1] + Fs[d-2] * Fc[d-1] + Fc[d-1] * Ts[d-1] + Fs[d-2] * Tc[d-1] + Tc[d-1] * Fs[d-1] + Ts[d-2] * Fc[d-1]
+    Fs[d] = Fs[d - 1] + Fc[d]
+ 
+  true_cache = {}
+  false_cache = {}
+
+def setup(number_pl_, max_depth_, act_world_, alt_worlds_):
+  # this is the function that should be called from another script
+  global number_pl, letters, act_world, alt_worlds, n_worlds, act_list, nact_list
+
+  number_pl = number_pl_
+  letters = list(string.ascii_lowercase)[:number_pl]
+  act_world = set(act_world_)
+  alt_worlds = set(alt_worlds_)
+  act_list = sorted(act_world)
+  nact_list = sorted(set(letters)-act_world)
+  n_worlds = len(alt_worlds) + 1
+ 
+  build_index_tables(max_depth_)
+
+  
 def prob(i):
     f = true_le(i)
     count = sum(f.check(InterpretationFunc(set(w))) for w in alt_worlds)
@@ -146,7 +188,7 @@ def main():
 
     args = parser.parse_args()
 
-    global number_pl, min_depth, max_depth, corpus_size, prop_tf, n_worlds, letters, Tc, Fc, Ts, Fs, true_cache, false_cache, act_world, alt_worlds
+    global number_pl, min_depth, max_depth, corpus_size, prop_tf, n_worlds, letters, Tc, Fc, Ts, Fs, true_cache, false_cache, act_world, alt_worlds, act_list, nact_list
 
     number_pl = args.number_pl
     min_depth = args.min_depth
@@ -156,6 +198,7 @@ def main():
     n_worlds = args.n_worlds
 
     letters = list(string.ascii_lowercase)[:number_pl]
+    print(letters)
 
     alt_worlds = set()
 
@@ -165,6 +208,8 @@ def main():
 
     # actual world:
     act_world = set(alt_worlds.pop())
+    act_list = sorted(act_world)
+    nact_list = sorted(set(letters)-act_world)
 
     # initialize index counts
     Tc = {1: len(act_world)}
@@ -182,7 +227,7 @@ def main():
 
     true_cache = {}
     false_cache = {}
-
+    
     samples_t = random.sample(range(Ts[min_depth-1], Ts[max_depth]), corpus_size*2)
 
     idx_t = samples_t[:corpus_size]
@@ -191,6 +236,8 @@ def main():
     dev_f = set()
     while len(dev_f) < corpus_size: # using this because false gets too big
         dev_f.add(random.randrange(Fs[min_depth - 1], Fs[max_depth]))
+
+    dev_f = list(dev_f)
 
     probs, suspects = zip(*(prob(x) for x in idx_t))
 
@@ -202,6 +249,9 @@ def main():
     out_path2 = out_dir / "dev_t.pkl"
     out_path3 = out_dir / "dev_f.pkl" 
     out_path4 = out_dir / "probs.pkl" 
+    out_path5 = out_dir / "act_world.pkl"
+    out_path6 = out_dir / "alt_worlds.pkl"
+    out_path7 = out_dir / "params.pkl"
 
 
     with open(out_path1, "wb") as f:
@@ -216,11 +266,22 @@ def main():
     with open(out_path4, "wb") as f:
       pickle.dump(probs,f)
 
+    with open(out_path5, "wb") as f:
+      pickle.dump(act_world,f)
+
+    with open(out_path6, "wb") as f:
+      pickle.dump(alt_worlds,f)
+
+    with open(out_path7, "wb") as f:
+      pickle.dump((number_pl, min_depth, max_depth, corpus_size, prop_tf, n_worlds), f)
+
     print(f"Saved {len(idx_t)} formulas to {out_path1}")
     print(f"Saved {len(dev_t)} formulas to {out_path2}")
     print(f"Saved {len(dev_f)} formulas to {out_path3}")
     print(f"Saved {len(probs)} probabilities to {out_path4}")
-
+    print(f"Saved act_world to {out_path5}")
+    print(f"Saved alt_worlds to {out_path6}")
+    print(f"Saved parameters to {out_path7}")
 
     # TODO: RESOLVER CASO TAUTOLOGIAS
     
