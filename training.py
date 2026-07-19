@@ -154,6 +154,8 @@ def main():
     vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"," "] + letters
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
     max_len = max([len(str(tfg.true_le(i))) for i in idx_t])
+    if cls:
+        max_len += 1
     vocab_size = len(vocab)
     pad_id = tok_to_id["[PAD]"]
     mask_id = tok_to_id["[MASK]"]
