@@ -172,7 +172,7 @@ def prob(i):
     f = true_le(i)
     count = sum(f.check(InterpretationFunc(set(w))) for w in alt_worlds)
     is_suspect = (count == n_worlds - 1)
-    return count/len(alt_worlds), is_suspect
+    return (len(alt_worlds) - count)/len(alt_worlds), is_suspect
 
 def main():
     print("starting")
