@@ -8,9 +8,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import os
 from torch.utils.data import WeightedRandomSampler
-
-
-## tokenization
+import matplotlib.pyplot as plt
 
 number_pl = None
 cls = None
@@ -22,15 +20,20 @@ max_len = None
 vocab_size = None
 pad_id = None
 mask_id = None
-
 optimizer = None
 loss_fn = None
-
-#parameters
 hidden = None
+device = None
+model = None
+dataset = None
+dataloader = None
+dev_dataset = None
+dev_dataloader = None
+history = []
+best_dev_loss = None
+best_epoch = None
 
 # tokenization
-
 def encode(i,max_len):
     formula = str(tfg.true_le(i))
     ids = [tok_to_id[ch] for ch in formula]
@@ -42,7 +45,6 @@ def encode(i,max_len):
     return ids, mask
 
 # model
-
 class EncoderTransformer(nn.Module):
   def __init__(self):
     super().__init__()
@@ -82,8 +84,7 @@ def train_step(input_ids, attention_mask):
     optimizer.step()
     return loss.item()
 
-#dataset for encoding as goes (not doing it from the index, i need to change this)
-
+# dataset for encoding during training
 class FormulaDataset(torch.utils.data.Dataset):
     def __init__(self, idx_list, max_len):
         self.idx_list = idx_list
@@ -95,19 +96,8 @@ class FormulaDataset(torch.utils.data.Dataset):
     def __getitem__(self,idx):
         ids, mask = encode(self.idx_list[idx], self.max_len)
         return torch.tensor(ids), torch.tensor(mask)
-    
+
 # training
-
-device = None
-model = None
-dataset = None
-dataloader = None
-dev_dataset = None
-dev_dataloader = None
-history = []
-best_dev_loss = None
-best_epoch = None
-
 def eval_loss(dataloader):
     model.eval()
     total_loss = 0.0
@@ -135,6 +125,7 @@ def main():
     parser.add_argument("--hidden", type=int, default=128)
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
+    parser.add_argument("--output-dir", type=str, required=True)
     args = parser.parse_args()
 
     global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id
@@ -147,7 +138,6 @@ def main():
     hidden = args.hidden
     heads = args.heads
     layers = args.layers
-
 
     # load the parameters the corpus was generated with
     act_world = pickle.load(open(folder / "act_world.pkl", "rb"))
@@ -164,11 +154,9 @@ def main():
     vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"," "] + letters
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
     max_len = max([len(str(tfg.true_le(i))) for i in idx_t])
-
     vocab_size = len(vocab)
     pad_id = tok_to_id["[PAD]"]
     mask_id = tok_to_id["[MASK]"]
-
 
     # create model, optimier and loss function
     global model, optimizer, loss_fn, dataloader, device, dataset, dev_dataset, dev_dataloader
@@ -181,8 +169,12 @@ def main():
     probs_t = torch.tensor(probs, dtype=torch.float)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
     print("device:", device)
+
+    if torch.cuda.is_available():
+        torch.cuda.set_per_process_memory_fraction(0.5, device=0)
+
+    model = model.to(device)
 
     dataset = FormulaDataset(idx_t, max_len)
     sampler = WeightedRandomSampler(weights=probs_t, num_samples=len(dataset), replacement=True)
@@ -191,8 +183,11 @@ def main():
     dev_dataset = FormulaDataset(dev_t, max_len)
     dev_dataloader = DataLoader(dev_dataset, batch_size=batch_size, shuffle=False)
 
+    # folders to save the checkpoints
+    project_root = Path(__file__).resolve().parent
+    out_dir = project_root/"model"/args.output_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    #os.makedirs("/kaggle/working/checkpoints", exist_ok=True)
     history = []
     best_dev_loss = float("inf")
     best_epoch = None
@@ -211,17 +206,31 @@ def main():
         history.append((epoch, train_loss, dev_loss))
         print(f"epoch {epoch+1}/{epochs}  train_loss={train_loss:.4f}  dev_loss={dev_loss:.4f}")
 
-        #torch.save(model.state_dict(), f"/kaggle/working/checkpoints/epoch_{epoch+1}.pt")
-
+        torch.save(model.state_dict(), out_dir / f"epoch_{epoch + 1}.pt")
+        
         if dev_loss < best_dev_loss:
             best_dev_loss = dev_loss
             best_epoch = epoch + 1
 
     print(f"best epoch: {best_epoch}  best_dev_loss: {best_dev_loss:.4f}")
 
+    # plot losses
+    epochs_plot = [h[0]+1 for h in history]
+    train_losses = [h[1] for h in history]
+    dev_losses = [h[2] for h in history]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs_plot, train_losses, label='Train Loss', marker='o')
+    plt.plot(epochs_plot, dev_losses, label='Dev Loss', marker='o')
+
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.title('Train and Dev Losses')
+    plt.grid(True)
+    plt.legend()
+
+    plt.savefig(out_dir / "loss_plot.png")
+    plt.show()
+
 if __name__ == "__main__":
     main()
-
-
-    #TODO: WHAT ABOUT THE ATTENTION MASK??
-    #TODO: MISTURAR DEV_T E DEV_F??
