@@ -63,7 +63,7 @@ def main():
     project_root = Path(__file__).resolve().parent
     folder = project_root / "dataset" / args.folder_name
 
-     # reload the world/params the corpus (and hence vocab) was built with
+    # reload the world/params the corpus (and hence vocab) was built with
     act_world = pickle.load(open(folder / "act_world.pkl", "rb"))
     alt_worlds = pickle.load(open(folder / "alt_worlds.pkl", "rb"))
     number_pl, min_depth, max_depth, corpus_size, prop_td, n_worlds = pickle.load(
@@ -138,26 +138,25 @@ def main():
                 cls_reps.append(hidden_states[:, 0, :].cpu().numpy())
  
     mean_reps = np.concatenate(mean_reps, axis=0)
-    result = {
-        "indexes": idx_list,
-        "mean": mean_reps,
-    }
-    if args.cls_repr:
-        result["cls"] = np.concatenate(cls_reps, axis=0)
- 
+    
     out_dir = project_root / "reps" / args.output
     out_dir.mkdir(parents=True, exist_ok=True)
     ckpt_stem = Path(args.checkpoint).stem
     set_stem = Path(args.set_path).stem
-    out_path = out_dir / f"{ckpt_stem}__{set_stem}.pkl"
-    with open(out_path, "wb") as f:
-        pickle.dump(result, f)
  
-    print(f"saved representations for {len(idx_list)} items to {out_path}")
+    mean_path = out_dir / f"{ckpt_stem}__{set_stem}__mean.pkl"
+    with open(mean_path, "wb") as f:
+        pickle.dump({"indexes": idx_list, "type": "mean", "reps": mean_reps}, f)
+    print(f"saved mean representations for {len(idx_list)} items to {mean_path}")
     print(f"mean shape: {mean_reps.shape}")
-    if args.cls_repr:
-        print(f"cls shape: {result['cls'].shape}")
  
+    if args.cls_repr:
+        cls_reps = np.concatenate(cls_reps, axis=0)
+        cls_path = out_dir / f"{ckpt_stem}__{set_stem}__cls.pkl"
+        with open(cls_path, "wb") as f:
+            pickle.dump({"indexes": idx_list, "type": "cls", "reps": cls_reps}, f)
+        print(f"saved cls representations for {len(idx_list)} items to {cls_path}")
+        print(f"cls shape: {cls_reps.shape}")
  
 if __name__ == "__main__":
     main()
