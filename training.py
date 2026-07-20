@@ -222,8 +222,8 @@ def main():
     dev_losses = [h[2] for h in history]
 
     plt.figure(figsize=(10, 6))
-    plt.plot(epochs_plot, train_losses, label='Train Loss', marker='o')
-    plt.plot(epochs_plot, dev_losses, label='Dev Loss', marker='o')
+    plt.plot(epochs_plot, train_losses, label='Train Loss')
+    plt.plot(epochs_plot, dev_losses, label='Dev Loss')
 
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
