@@ -34,8 +34,8 @@ best_dev_loss = None
 best_epoch = None
 
 # tokenization
-def encode(i,max_len):
-    formula = str(tfg.true_le(i))
+def encode(i,max_len,t=True):
+    formula = str(tfg.true_le(i)) if t else str(tfg.false_le(i))
     ids = [tok_to_id[ch] for ch in formula]
     if cls:
         ids = [tok_to_id["[CLS]"]] + ids
@@ -86,15 +86,16 @@ def train_step(input_ids, attention_mask):
 
 # dataset for encoding during training
 class FormulaDataset(torch.utils.data.Dataset):
-    def __init__(self, idx_list, max_len):
+    def __init__(self, idx_list, max_len, t=True):
         self.idx_list = idx_list
         self.max_len = max_len
+        self.t = t
 
     def __len__(self):
         return len(self.idx_list)
     
     def __getitem__(self,idx):
-        ids, mask = encode(self.idx_list[idx], self.max_len)
+        ids, mask = encode(self.idx_list[idx], self.max_len, self.t)
         return torch.tensor(ids), torch.tensor(mask)
 
 # training
