@@ -127,6 +127,7 @@ def main():
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--output-dir", type=str, required=True)
+    parser.add_argument("--bias", action="store_true")
     args = parser.parse_args()
 
     global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id
@@ -168,8 +169,11 @@ def main():
     loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
 
     #training
-    probs = pickle.load(open(folder / "probs.pkl", "rb"))
-    probs_t = torch.tensor(probs, dtype=torch.float)
+    if args.bias:
+        probs = pickle.load(open(folder / "probs.pkl", "rb"))
+        probs_t = torch.tensor(probs, dtype=torch.float)
+    else:
+        probs_t = torch.ones(len(dataset)) #if flag --bias is not activated, the random sampling happens uniformly 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device:", device)
