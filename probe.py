@@ -1,43 +1,3 @@
-"""
-Online-code (prequential) MDL probing for sentence-level representations.
-
-Standalone reimplementation of the online coding method from:
-  Voita & Titov (2020), "Information-Theoretic Probing with Minimum
-  Description Length", EMNLP 2020.  (Eq. 3 + Sec. 3.1 training recipe.)
-
-Expects on disk:
-  X_train.npy  (N_train, d) float  -- one vector per sentence
-  y_train.npy  (N_train,)   int    -- class labels 0..K-1 (K=2 for binary)
-  X_dev.npy    (N_dev, d)
-  y_dev.npy    (N_dev,)
-
-Usage:
-  python online_code_probe.py --data_dir path/to/npys --out results.json
-  # compare encoders by running once per representation set, e.g.:
-  # python online_code_probe.py --data_dir reps_trained/ --out trained.json
-  # python online_code_probe.py --data_dir reps_random/  --out random.json
-
-What it does (matching the paper's setup as closely as possible):
-  * Fraction schedule 0.1,0.2,0.4,0.8,1.6,3.2,6.25,12.5,25,50,100 % of the
-    training set (shuffled once with a fixed seed). Leading fractions are
-    dropped automatically if the first block would be < --min_first_block.
-  * Probe: MLP-2, hidden size 1000, ReLU, no dropout (Hewitt&Liang default).
-  * Optimizer: Adam, lr 1e-3; lr halved when a whole epoch brings no new
-    best dev loss; training stops after 4 such epochs in a row.
-  * For each prefix i a FRESH probe is trained on examples [0, t_i) and the
-    best-dev checkpoint is used to score block [t_i, t_{i+1}) with summed
-    -log2 p(y|x).
-  * Codelength = t_1 * log2(K)  +  sum_i  block_loss_bits_i     (Eq. 3)
-    Compression = N_train * log2(K) / codelength.
-  NOTE: losses are converted to bits (log base 2). The released notebook
-  sums PyTorch nat-valued losses with a log2 uniform term; here we are
-  consistent in bits, which is what Eq. 3 specifies.
-
-Output: JSON with codelength (bits & kbits), compression, per-portion
-block losses, and dev accuracy of each portion model (the last one is the
-standard full-data probe accuracy).
-"""
-
 import argparse
 import copy
 import json
@@ -117,37 +77,40 @@ def train_probe(X_tr, y_tr, X_dev, y_dev, input_dim, n_classes, args, device):
 
 def load_reps(path):
     """Load a .pkl file containing representations and return a float32
-    numpy array of shape (N, H). Handles the common cases: a bare
-    ndarray, a dict with an obvious array-like value, or a list of
-    per-example arrays/tensors."""
+    numpy array of shape (N, H).
+
+    Expected format (matches the extraction pipeline): a dict with a
+    "reps" key holding an (N, H) ndarray, e.g.
+    {"indexes": [...], "type": "t"/"f", "reps": ndarray (N, H)}.
+    Also tolerates a bare ndarray/tensor, in case the format changes."""
     with open(path, "rb") as f:
         obj = pickle.load(f)
 
     if isinstance(obj, dict):
-        # pick the first array-like value in the dict (e.g. {"mean_reps": ...})
-        for v in obj.values():
-            if isinstance(v, (np.ndarray, list, torch.Tensor)):
-                obj = v
-                break
+        if "reps" in obj:
+            obj = obj["reps"]
         else:
-            raise ValueError(f"Could not find an array-like value in dict loaded from {path}")
+            # fall back: look for a 2-D ndarray/tensor value among the dict's values
+            for v in obj.values():
+                if isinstance(v, (np.ndarray, torch.Tensor)) and getattr(v, "ndim", 0) == 2:
+                    obj = v
+                    break
+            else:
+                raise ValueError(
+                    f"Could not find a 'reps' key or any 2-D array value in dict "
+                    f"loaded from {path} (keys: {list(obj.keys())})")
 
     if isinstance(obj, torch.Tensor):
         arr = obj.detach().cpu().numpy()
     elif isinstance(obj, np.ndarray):
         arr = obj
-    elif isinstance(obj, list):
-        # list of per-example arrays/tensors/lists -> stack into (N, H)
-        elems = [e.detach().cpu().numpy() if isinstance(e, torch.Tensor) else np.asarray(e)
-                 for e in obj]
-        arr = np.stack(elems, axis=0)
     else:
         raise ValueError(f"Unrecognized object of type {type(obj)} loaded from {path}")
 
     arr = np.asarray(arr, dtype=np.float32)
-    if arr.ndim == 1:
-        arr = arr[None, :]
-    assert arr.ndim == 2, f"Expected (N, H) representations, got shape {arr.shape} from {path}"
+    assert arr.ndim == 2, (
+        f"Expected (N, H) representations, got shape {arr.shape} from {path}. "
+        f"Check that this pickle's 'reps' entry is per-example, not an already-averaged vector.")
     return arr
 
 
