@@ -168,6 +168,8 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3)
     loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
 
+    dataset = FormulaDataset(idx_t, max_len)
+
     #training
     if args.bias:
         probs = pickle.load(open(folder / "probs.pkl", "rb"))
@@ -183,7 +185,6 @@ def main():
 
     model = model.to(device)
 
-    dataset = FormulaDataset(idx_t, max_len)
     sampler = WeightedRandomSampler(weights=probs_t, num_samples=len(dataset), replacement=True)
     dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
 
