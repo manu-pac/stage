@@ -96,7 +96,7 @@ class FormulaDataset(torch.utils.data.Dataset):
     
     def __getitem__(self,idx):
         ids, mask = encode(self.idx_list[idx], self.max_len, self.t)
-        return torch.tensor(ids), torch.tensor(mask)
+        return torch.tensor(ids), torch.tensor(mask), idx
 
 # training
 def eval_loss(dataloader):
@@ -199,10 +199,17 @@ def main():
     best_dev_loss = float("inf")
     best_epoch = None
 
+    seen = set()
+    total_seen=0
+
     for epoch in range(epochs):
         total_loss = 0.0
         n_batches = 0
-        for batch_input_ids, batch_attention_mask in dataloader:
+        for batch_input_ids, batch_attention_mask, batch_idx in dataloader:
+            batch_size = len(batch_idx)
+            total_seen += batch_size
+            seen.update(batch_idx.tolist())
+
             batch_input_ids = batch_input_ids.to(device)
             batch_attention_mask = batch_attention_mask.to(device)
             loss = train_step(batch_input_ids, batch_attention_mask)
@@ -220,6 +227,10 @@ def main():
             best_epoch = epoch + 1
 
     print(f"best epoch: {best_epoch}  best_dev_loss: {best_dev_loss:.4f}")
+    print(f"Total examples seen: {total_seen}")
+    print(f"Unique examples seen: {len(seen)}")
+    print(f"Dataset size: {len(dataset)}")
+    print(f"Coverage: {100 * len(seen) / len(dataset):.2f}%")
 
     # plot losses
     epochs_plot = [h[0]+1 for h in history]
