@@ -1,5 +1,4 @@
 """
-    python get_representations.py \
         --checkpoint #model ill use \
         --set-path #path to the dataset i'll get the reps to \
         --folder-name #dataset folder name used at training time, needed to reload params.pkl / act_world.pkl / alt_worlds.pkl \
@@ -115,7 +114,7 @@ def main():
     cls_reps = [] if args.cls_repr else None
  
     with torch.no_grad():
-        for batch_input_ids, batch_attention_mask in dataloader:
+        for batch_input_ids, batch_attention_mask, batch_idx in dataloader:
             batch_input_ids = batch_input_ids.to(device)
             batch_attention_mask = batch_attention_mask.to(device)
  
