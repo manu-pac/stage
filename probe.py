@@ -3,6 +3,7 @@ import copy
 import json
 import math
 import pickle
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -11,7 +12,7 @@ import torch.nn as nn
 FRACTIONS = [0.001, 0.002, 0.004, 0.008, 0.016, 0.032,
              0.0625, 0.125, 0.25, 0.5, 1.0]
 
-
+# builds a probe (the default numbers are the ones used on the article)
 def build_probe(input_dim, n_classes, hidden=1000, n_hidden_layers=2):
     layers, d = [], input_dim
     for _ in range(n_hidden_layers):
@@ -23,34 +24,37 @@ def build_probe(input_dim, n_classes, hidden=1000, n_hidden_layers=2):
 
 @torch.no_grad()
 def summed_nll_bits_and_acc(probe, X, y, batch_size, device):
-    """Sum of -log2 p(y|x) over (X, y), plus accuracy."""
+    """calculates cross entropy loss/shannon-huffman codelength (which is the same)"""
     probe.eval()
     ce_sum = nn.CrossEntropyLoss(reduction="sum")
     total_nats, correct = 0.0, 0
     for s in range(0, len(X), batch_size):
         xb = X[s:s + batch_size].to(device)
         yb = y[s:s + batch_size].to(device)
-        logits = probe(xb)
-        total_nats += ce_sum(logits, yb).item()
-        correct += (logits.argmax(-1) == yb).sum().item()
+        logits = probe(xb) # gets the raw scores of each example of the batch
+        total_nats += ce_sum(logits, yb).item() # adds the cross entropy loss of this batch to the counter
+        correct += (logits.argmax(-1) == yb).sum().item() # adds the accuracy of this batch to the counter
     return total_nats / math.log(2), correct / len(X)
 
 
 def train_probe(X_tr, y_tr, X_dev, y_dev, input_dim, n_classes, args, device):
-    """Paper recipe: Adam lr 1e-3, halve lr on no-improvement epoch,
+    """ takes a training slice, 
+    Adam lr 1e-3, halve lr on no-improvement epoch,
     stop after `patience` consecutive no-improvement epochs; return the
     best-dev-loss checkpoint."""
     torch.manual_seed(args.seed)
     probe = build_probe(input_dim, n_classes, args.hidden,
-                        args.hidden_layers).to(device)
+                        args.hidden_layers).to(device) # a new model is started at each iteration
     opt = torch.optim.Adam(probe.parameters(), lr=args.lr)
     ce_mean = nn.CrossEntropyLoss()
 
     best_dev, best_state, bad_epochs = float("inf"), None, 0
     n = len(X_tr)
+
     for epoch in range(args.max_epochs):
         probe.train()
         perm = torch.randperm(n)
+
         for s in range(0, n, args.batch_size):
             idx = perm[s:s + args.batch_size]
             xb, yb = X_tr[idx].to(device), y_tr[idx].to(device)
@@ -59,6 +63,7 @@ def train_probe(X_tr, y_tr, X_dev, y_dev, input_dim, n_classes, args, device):
             loss.backward()
             opt.step()
 
+        # dev set (used to stop traning after a given number of no improvement epochs)
         dev_bits, _ = summed_nll_bits_and_acc(probe, X_dev, y_dev,
                                               args.batch_size, device)
         if dev_bits < best_dev - 1e-7:
@@ -66,7 +71,7 @@ def train_probe(X_tr, y_tr, X_dev, y_dev, input_dim, n_classes, args, device):
             best_state = copy.deepcopy(probe.state_dict())
         else:
             bad_epochs += 1
-            for g in opt.param_groups:          # anneal lr by 0.5
+            for g in opt.param_groups: # anneal lr by 0.5
                 g["lr"] *= 0.5
             if bad_epochs >= args.patience:
                 break
@@ -76,13 +81,6 @@ def train_probe(X_tr, y_tr, X_dev, y_dev, input_dim, n_classes, args, device):
 
 
 def load_reps(path):
-    """Load a .pkl file containing representations and return a float32
-    numpy array of shape (N, H).
-
-    Expected format (matches the extraction pipeline): a dict with a
-    "reps" key holding an (N, H) ndarray, e.g.
-    {"indexes": [...], "type": "t"/"f", "reps": ndarray (N, H)}.
-    Also tolerates a bare ndarray/tensor, in case the format changes."""
     with open(path, "rb") as f:
         obj = pickle.load(f)
 
@@ -114,11 +112,11 @@ def load_reps(path):
     return arr
 
 
-def build_dataset(true_path, false_path, dev_frac, seed):
+def build_dataset1(folder, dev_frac, seed):
     """Load true/false representation pickles, label them (1/0), merge,
     shuffle once with `seed`, and split off a dev set."""
-    true_reps = load_reps(true_path)
-    false_reps = load_reps(false_path)
+    true_reps = load_reps(folder/"dev_t.pkl")
+    false_reps = load_reps(folder/"dev_f.pkl")
 
     X = np.concatenate([true_reps, false_reps], axis=0)
     y = np.concatenate([np.ones(len(true_reps), dtype=np.int64),
@@ -142,9 +140,41 @@ def build_dataset(true_path, false_path, dev_frac, seed):
 
     return X_train, y_train, X_dev, y_dev
 
+def build_dataset2(folder, dev_frac, seed, w_idx=0):
+    """Load true/false representation pickles, label them (1/0), merge,
+    shuffle once with `seed`, and split off a dev set."""
+
+    true_reps = load_reps(folder/"dev_t.pkl")
+    false_reps = load_reps(folder/"dev_t.pkl")
+    alt_truths = load_reps(folder/"alt_truths.pkl")
+    worlds = list(alt_truths["dev_t"].keys())
+
+    X = np.concatenate([true_reps, false_reps], axis=0)
+
+    y = np.array(alt_truths["dev_t"][worlds[w_idx]] +alt_truths["dev_f"][worlds[w_idx]],dtype=int)
+
+    print(f"loaded {len(true_reps)} true / {len(false_reps)} false examples, "
+          f"dim={X.shape[1]}")
+
+    rng = np.random.RandomState(seed)
+    order = rng.permutation(len(X))
+    X, y = X[order], y[order]
+
+    n_dev = max(1, int(round(dev_frac * len(X))))
+    X_dev, y_dev = X[:n_dev], y[:n_dev]
+    X_train, y_train = X[n_dev:], y[n_dev:]
+
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    y_train = torch.tensor(y_train, dtype=torch.long)
+    X_dev = torch.tensor(X_dev, dtype=torch.float32)
+    y_dev = torch.tensor(y_dev, dtype=torch.long)
+
+    return X_train, y_train, X_dev, y_dev
+
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--folder_name", required=True)
     p.add_argument("--true_path", required=True,
                    help=".pkl file with the true-class representations")
     p.add_argument("--false_path", required=True,
@@ -163,20 +193,29 @@ def main():
     p.add_argument("--min_first_block", type=int, default=50,
                    help="drop leading fractions until the first block has "
                         "at least this many examples")
+    p.add_argument("--task", required=True,type=int, help="1: classify t/f according to act world. 2: classify t/f according to alt world")
+    p.add_argument("--w_idx", type=int, help="aternative wolrd to be considered with task 2")
     args = p.parse_args()
+
+    project_root = Path(__file__).resolve().parent
+    folder = project_root / "dataset" / args.folder_name
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    X_train, y_train, X_dev, y_dev = build_dataset(
-        args.true_path, args.false_path, args.dev_frac, args.seed)
-    assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
-
+    if args.task == 1:
+        X_train, y_train, X_dev, y_dev = build_dataset1(
+            folder, args.dev_frac, args.seed)
+        assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
+    elif args.task == 2:
+        X_train, y_train, X_dev, y_dev = build_dataset2(folder, args.dev_frac, args.seed, args.w_idx)
+        assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
+        
     n = len(X_train)
     d = X_train.shape[1]
     K = int(max(y_train.max(), y_dev.max()).item()) + 1
     print(f"{n} train / {len(X_dev)} dev examples, dim={d}, K={K} classes")
 
-    # timesteps; drop leading fractions if first block too small
+    # timesteps (drop first fractions if first blocks too small)
     fractions = list(FRACTIONS)
     while len(fractions) > 2 and int(fractions[0] * n) < args.min_first_block:
         fractions.pop(0)
@@ -184,18 +223,25 @@ def main():
     ts[-1] = n
     print(f"timesteps (train-prefix sizes): {ts}")
 
-    uniform_total = n * math.log2(K)
-    codelength = ts[0] * math.log2(K)          # first block: uniform code
+
+    uniform_total = n * math.log2(K) # baseline codelength if nothing was learnt, used to calculate compression ratio
+    codelength = ts[0] * math.log2(K) # initialies actual code length w/ first block: uniform code
+
+    # first entry o a log that'll keep each block's information
     portions = [{"prefix_size": ts[0], "note": "uniform code",
                  "block_size": ts[0], "block_bits": ts[0] * math.log2(K)}]
 
     for i in range(len(ts) - 1):
         prefix, nxt = ts[i], ts[i + 1]
+        #trains model on everuthing transmitted so far
         probe = train_probe(X_train[:prefix], y_train[:prefix],
                             X_dev, y_dev, d, K, args, device)
+
+        #scores the trained model on the next untouched block
         block_bits, block_acc = summed_nll_bits_and_acc(
             probe, X_train[prefix:nxt], y_train[prefix:nxt],
             args.batch_size, device)
+
         _, dev_acc = summed_nll_bits_and_acc(probe, X_dev, y_dev,
                                              args.batch_size, device)
         codelength += block_bits
