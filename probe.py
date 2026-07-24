@@ -112,11 +112,11 @@ def load_reps(path):
     return arr
 
 
-def build_dataset1(folder, dev_frac, seed):
+def build_dataset1(reps_folder, dev_frac, seed):
     """Load true/false representation pickles, label them (1/0), merge,
     shuffle once with `seed`, and split off a dev set."""
-    true_reps = load_reps(folder/"dev_t.pkl")
-    false_reps = load_reps(folder/"dev_f.pkl")
+    true_reps = load_reps(reps_folder/"dev_t")
+    false_reps = load_reps(reps_folder/"dev_f")
 
     X = np.concatenate([true_reps, false_reps], axis=0)
     y = np.concatenate([np.ones(len(true_reps), dtype=np.int64),
@@ -140,13 +140,13 @@ def build_dataset1(folder, dev_frac, seed):
 
     return X_train, y_train, X_dev, y_dev
 
-def build_dataset2(folder, dev_frac, seed, w_idx=0):
+def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
     """Load true/false representation pickles, label them (1/0), merge,
     shuffle once with `seed`, and split off a dev set."""
 
-    true_reps = load_reps(folder/"dev_t.pkl")
-    false_reps = load_reps(folder/"dev_t.pkl")
-    alt_truths = load_reps(folder/"alt_truths.pkl")
+    true_reps = load_reps(rp_folder/"dev_t")
+    false_reps = load_reps(rp_folder/"dev_t")
+    alt_truths = load_reps(ds_folder/"alt_truths.pkl")
     worlds = list(alt_truths["dev_t"].keys())
 
     X = np.concatenate([true_reps, false_reps], axis=0)
@@ -174,11 +174,8 @@ def build_dataset2(folder, dev_frac, seed, w_idx=0):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--folder_name", required=True)
-    p.add_argument("--true_path", required=True,
-                   help=".pkl file with the true-class representations")
-    p.add_argument("--false_path", required=True,
-                   help=".pkl file with the false-class representations")
+    p.add_argument("--dataset_folder", required=True, help='dataset folder')
+    p.add_argument("--reps_folder", required=True)
     p.add_argument("--dev_frac", type=float, default=0.1,
                    help="fraction of the combined true+false set held out as dev")
     p.add_argument("--out", default="online_code_results.json")
@@ -198,18 +195,19 @@ def main():
     args = p.parse_args()
 
     project_root = Path(__file__).resolve().parent
-    folder = project_root / "dataset" / args.folder_name
+    ds_folder = project_root / "dataset" / args.dataset_folder
+    rp_folder = project_root / "reps" / args.reps_folder
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if args.task == 1:
         X_train, y_train, X_dev, y_dev = build_dataset1(
-            folder, args.dev_frac, args.seed)
+            rp_folder, args.dev_frac, args.seed)
         assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
     elif args.task == 2:
-        X_train, y_train, X_dev, y_dev = build_dataset2(folder, args.dev_frac, args.seed, args.w_idx)
+        X_train, y_train, X_dev, y_dev = build_dataset2(ds_folder, rp_folder, args.dev_frac, args.seed, args.w_idx)
         assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
-        
+
     n = len(X_train)
     d = X_train.shape[1]
     K = int(max(y_train.max(), y_dev.max()).item()) + 1

@@ -138,7 +138,11 @@ def main():
  
     mean_reps = np.concatenate(mean_reps, axis=0)
     
-    out_dir = project_root / "reps" / args.output
+    if args.set_f:
+        out_dir = project_root / "reps" / args.output / "dev_t"
+    else:
+        out_dir = project_root / "reps" / args.output / "dev_f"
+        
     out_dir.mkdir(parents=True, exist_ok=True)
     ckpt_stem = Path(args.checkpoint).stem
     set_stem = Path(args.set_path).stem
