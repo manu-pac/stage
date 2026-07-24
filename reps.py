@@ -140,7 +140,7 @@ def main():
     
     if args.set_f:
         out_path = project_root / "reps" / args.output / "dev_t"
-    else:
+    elif not args.set_f:
         out_path = project_root / "reps" / args.output / "dev_f"
 
     out_path.mkdir(parents=True, exist_ok=True)
@@ -152,7 +152,10 @@ def main():
  
     if args.cls_repr:
         cls_reps = np.concatenate(cls_reps, axis=0)
-        cls_path = out_path / cls /
+        if args.set_f:
+            cls_path = project_root / "reps" / "cls" / args.output / "dev_t"
+        elif not args.set_f:
+            cls_path = project_root / "reps" / "cls" / args.output / "dev_f"
         with open(cls_path, "wb") as f:
             pickle.dump({"indexes": idx_list, "type": "cls", "reps": cls_reps}, f)
         print(f"saved cls representations for {len(idx_list)} items to {cls_path}")
