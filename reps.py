@@ -137,25 +137,26 @@ def main():
                 cls_reps.append(hidden_states[:, 0, :].cpu().numpy())
  
     mean_reps = np.concatenate(mean_reps, axis=0)
-    
-    if args.set_f:
-        out_path = project_root / "reps" / args.output / "dev_t"
-    elif not args.set_f:
-        out_path = project_root / "reps" / args.output / "dev_f"
 
-    out_path.mkdir(parents=True, exist_ok=True)
+    if args.set_f:
+        out_path = project_root / "reps" / args.output / "dev_t.pkl"
+    else:
+        out_path = project_root / "reps" / args.output / "dev_f.pkl"
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(out_path, "wb") as f:
         pickle.dump({"indexes": idx_list, "type": "mean", "reps": mean_reps}, f)
     print(f"saved mean representations for {len(idx_list)} items to {out_path}")
     print(f"mean shape: {mean_reps.shape}")
- 
+
     if args.cls_repr:
         cls_reps = np.concatenate(cls_reps, axis=0)
         if args.set_f:
-            cls_path = project_root / "reps" / "cls" / args.output / "dev_t"
-        elif not args.set_f:
-            cls_path = project_root / "reps" / "cls" / args.output / "dev_f"
+            cls_path = project_root / "reps" / "cls" / args.output / "dev_t.pkl"
+        else:
+            cls_path = project_root / "reps" / "cls" / args.output / "dev_f.pkl"
+        cls_path.parent.mkdir(parents=True, exist_ok=True)
         with open(cls_path, "wb") as f:
             pickle.dump({"indexes": idx_list, "type": "cls", "reps": cls_reps}, f)
         print(f"saved cls representations for {len(idx_list)} items to {cls_path}")
