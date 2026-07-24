@@ -115,8 +115,8 @@ def load_reps(path):
 def build_dataset1(reps_folder, dev_frac, seed):
     """Load true/false representation pickles, label them (1/0), merge,
     shuffle once with `seed`, and split off a dev set."""
-    true_reps = load_reps(reps_folder/"dev_t")
-    false_reps = load_reps(reps_folder/"dev_f")
+    true_reps = load_reps(reps_folder/"dev_t.pkl")
+    false_reps = load_reps(reps_folder/"dev_f.pkl")
 
     X = np.concatenate([true_reps, false_reps], axis=0)
     y = np.concatenate([np.ones(len(true_reps), dtype=np.int64),
@@ -144,8 +144,8 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
     """Load true/false representation pickles, label them (1/0), merge,
     shuffle once with `seed`, and split off a dev set."""
 
-    true_reps = load_reps(rp_folder/"dev_t")
-    false_reps = load_reps(rp_folder/"dev_t")
+    true_reps = load_reps(rp_folder/"dev_t.pkl")
+    false_reps = load_reps(rp_folder/"dev_f.pkl")
     alt_truths = load_reps(ds_folder/"alt_truths.pkl")
     worlds = list(alt_truths["dev_t"].keys())
 
