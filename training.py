@@ -104,7 +104,7 @@ def eval_loss(dataloader):
     total_loss = 0.0
     n_batches = 0
     with torch.no_grad():
-        for batch_input_ids, batch_attention_mask in dataloader:
+        for batch_input_ids, batch_attention_mask, batch_idx in dataloader:
             batch_input_ids = batch_input_ids.to(device)
             batch_attention_mask = batch_attention_mask.to(device)
             masked_input, labels = mask_tokens(batch_input_ids, batch_attention_mask)
