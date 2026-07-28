@@ -146,7 +146,7 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
 
     true_reps = load_reps(rp_folder/"dev_t.pkl")
     false_reps = load_reps(rp_folder/"dev_f.pkl")
-    alt_truths = pickle.load(open(ds_folder/"alt_truths.pkl"))
+    alt_truths = pickle.load(open(ds_folder/"alt_truths.pkl","rb"))
     worlds = list(alt_truths["dev_t"].keys())
 
     X = np.concatenate([true_reps, false_reps], axis=0)
@@ -274,7 +274,7 @@ def main():
 
     suffix = f"-w{args.w_idx}" if args.task == 2 else ""
     out = project_root / "probe_results" / f"{args.model}-{args.epoch}-{dataset_folder}-{args.rep_type}-{args.task}{suffix}.json"
-    out.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
 
     with open(out, "w") as f:
             json.dump(results, f, indent=2)

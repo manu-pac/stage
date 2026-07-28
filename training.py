@@ -149,12 +149,13 @@ def main():
     # load the actual corpus
     idx_t = pickle.load(open(folder / "train.pkl", "rb"))
     dev_t = pickle.load(open(folder / "dev_t.pkl", "rb"))
+    dev_f = pickle.load(open(folder / "dev_f.pkl", "rb"))
 
     # build pieces for tokenization
     letters = list(string.ascii_lowercase)[:number_pl]
     vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"," "] + letters
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
-    max_len = max([len(str(tfg.true_le(i))) for i in idx_t])
+    max_len = max(max(len(str(tfg.true_le(i))) for i in idx_t), max(len(str(tfg.true_le(i))) for i in dev_t), max(len(str(tfg.false_le(i))) for i in dev_f))
     if cls:
         max_len += 1
     vocab_size = len(vocab)
@@ -199,6 +200,7 @@ def main():
         suffix += "_rb"
 
     out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     history = []
     best_dev_loss = float("inf")
