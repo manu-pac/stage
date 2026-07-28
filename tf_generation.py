@@ -183,9 +183,7 @@ def main():
     parser.add_argument("--corpus_size", type=int, required=True, help="Size of the training corpus")
     parser.add_argument("--prop_tf", type=float, default=0.5, help="Proportion of true/false values for propositional letters")
     parser.add_argument("--n_worlds", type=int, required=True, help="Number of alternative worlds")
-
     parser.add_argument("--folder_name", type=str, required=True, help="Name of the folder to save the dataset")
-
     args = parser.parse_args()
 
     global number_pl, min_depth, max_depth, corpus_size, prop_tf, n_worlds, letters, Tc, Fc, Ts, Fs, true_cache, false_cache, act_world, alt_worlds, act_list, nact_list

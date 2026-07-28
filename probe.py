@@ -183,7 +183,6 @@ def main():
     p.add_argument("--w_idx", type=int, default=0, help="alternative world to be considered with task 2")
     p.add_argument("--min_first_block", type=int, default=50, help="drop leading fractions until the first block has at least this many examples")
 
-    #todo: figure out if these are for the probe or about the model
     p.add_argument("--hidden", type=int, default=1000)
     p.add_argument("--hidden_layers", type=int, default=2)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -275,6 +274,7 @@ def main():
 
     suffix = f"-w{args.w_idx}" if args.task == 2 else ""
     out = project_root / "probe_results" / f"{args.model}-{args.epoch}-{dataset_folder}-{args.rep_type}-{args.task}{suffix}.json"
+    out.mkdir(parents=True, exist_ok=True)
 
     with open(out, "w") as f:
             json.dump(results, f, indent=2)
