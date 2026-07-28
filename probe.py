@@ -175,8 +175,8 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--task", required=True, type=int, help="1: classify t/f according to act world. 2: classify t/f according to alt world")
-    p.add_argument("--model", required=True)
-    p.add_argument("--epoch", required=True)
+    p.add_argument("--model", required=True, help="name of the folder of the model that'll be probed")
+    p.add_argument("--epoch", required=True, help="epoch of the model that'll be probed")
     p.add_argument("--rep_type", required=True, help="type of the representation that'll be probed (e.g. mean or cls)")
     p.add_argument("--dataset_folder", default=None, help="name of the folder of the dataset the reps probed refer to")
 

@@ -23,7 +23,7 @@ def build_vocab(number_pl, use_cls):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", help="name of the model")
+    parser.add_argument("--model", help="name of the folder of the model that'll be used")
     parser.add_argument("--epoch", help="epoch that will be used")
     parser.add_argument("--dataset_name", help="dataset to get the reps from (e.g. dev_t, dev_f, train)")
     parser.add_argument("--dataset_folder", default=None, help="folder the dataset that will be represented is located on")
