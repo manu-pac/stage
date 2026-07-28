@@ -4,6 +4,7 @@ import random
 from pathlib import Path
 import argparse
 import pickle
+from math import comb
 
 number_pl = None
 min_depth = None
@@ -171,8 +172,7 @@ def setup(number_pl_, max_depth_, act_world_, alt_worlds_):
 def prob(i):
     f = true_le(i)
     count = sum(f.check(InterpretationFunc(set(w))) for w in alt_worlds)
-    is_suspect = (count == n_worlds - 1)
-    return (len(alt_worlds) - count)/len(alt_worlds), is_suspect
+    return (len(alt_worlds) - count)/len(alt_worlds)
 
 def main():
     print("starting")
@@ -199,6 +199,9 @@ def main():
 
     letters = list(string.ascii_lowercase)[:number_pl]
     print(letters)
+
+    k = int(number_pl * prop_tf)
+    assert n_worlds <= comb(number_pl, k), "n_worlds exceeds distinct valuations possible"
 
     alt_worlds = set()
 
@@ -239,7 +242,7 @@ def main():
 
     dev_f = list(dev_f)
 
-    probs, suspects = zip(*(prob(x) for x in idx_t))
+    probs = [prob(x) for x in idx_t]
 
     project_root = Path(__file__).resolve().parent
     out_dir = project_root/"dataset"/args.folder_name
@@ -282,8 +285,6 @@ def main():
     print(f"Saved act_world to {out_path5}")
     print(f"Saved alt_worlds to {out_path6}")
     print(f"Saved parameters to {out_path7}")
-
-    # TODO: RESOLVER CASO TAUTOLOGIAS
     
 if __name__ == "__main__":
     main()

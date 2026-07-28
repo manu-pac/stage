@@ -35,24 +35,24 @@ best_epoch = None
 
 # tokenization
 def encode(i,max_len,t=True):
-    formula = str(tfg.true_le(i)) if t else str(tfg.false_le(i))
+    formula = str(tfg.true_le(i)) if t else str(tfg.false_le(i)) # the formulas are built based on their truthness to the act world
     ids = [tok_to_id[ch] for ch in formula]
     if cls:
         ids = [tok_to_id["[CLS]"]] + ids
     real_len = len(ids)
     ids += [tok_to_id["[PAD]"]] * (max_len - real_len)
-    mask = [1]*real_len + [0]*(max_len-real_len)
+    mask = [1]*real_len + [0]*(max_len-real_len) # padding masking
     return ids, mask
 
 # model
 class EncoderTransformer(nn.Module):
   def __init__(self):
     super().__init__()
-    self.tok_emb = nn.Embedding(vocab_size, hidden, padding_idx=pad_id) #ver pq q tem hidden aqui, ver como isso funciona
-    self.pos_emb = nn.Embedding(max_len, hidden) # de novo
-    encoder_layer = nn.TransformerEncoderLayer(d_model=hidden, nhead=heads, dim_feedforward=hidden*4,batch_first=True) #o q eh batch first?
+    self.tok_emb = nn.Embedding(vocab_size, hidden, padding_idx=pad_id) 
+    self.pos_emb = nn.Embedding(max_len, hidden) 
+    encoder_layer = nn.TransformerEncoderLayer(d_model=hidden, nhead=heads, dim_feedforward=hidden*4,batch_first=True) 
     self.encoder = nn.TransformerEncoder(encoder_layer,num_layers=layers)
-    self.mlm_head = nn.Linear(hidden, vocab_size) #ver como funcniona isso de ter uma MLM head
+    self.mlm_head = nn.Linear(hidden, vocab_size) 
 
   def forward(self, input_ids, attention_mask):
     B,T= input_ids.shape
@@ -84,7 +84,6 @@ def train_step(input_ids, attention_mask):
     optimizer.step()
     return loss.item()
 
-# dataset for encoding during training
 class FormulaDataset(torch.utils.data.Dataset):
     def __init__(self, idx_list, max_len, t=True):
         self.idx_list = idx_list
@@ -93,7 +92,8 @@ class FormulaDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.idx_list)
-    
+
+    # encoding during training
     def __getitem__(self,idx):
         ids, mask = encode(self.idx_list[idx], self.max_len, self.t)
         return torch.tensor(ids), torch.tensor(mask), idx
@@ -119,20 +119,19 @@ def eval_loss(dataloader):
 def main():
     print("starting")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folder-name", type=str, required=True)
-    parser.add_argument("--cls", action="store_true")
-    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--dataset_folder", type=str, required=True, help="name of the folder where the dataset that'll be used for training is stored")
+    parser.add_argument("--cls", action="store_true", help="add [CLS] on tokenization")
+    parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--hidden", type=int, default=128)
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
-    parser.add_argument("--output-dir", type=str, required=True)
-    parser.add_argument("--bias", action="store_true")
+    parser.add_argument("--r_bias", action="store_true", help="add reporting bias to the creation of the batches")
     args = parser.parse_args()
 
     global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id
 
-    folder =  Path(__file__).resolve().parent / "dataset" / args.folder_name
+    folder =  Path(__file__).resolve().parent / "dataset" / args.dataset_folder
 
     cls = args.cls
     batch_size = args.batch_size
@@ -171,7 +170,7 @@ def main():
     dataset = FormulaDataset(idx_t, max_len)
 
     #training
-    if args.bias:
+    if args.r_bias:
         probs = pickle.load(open(folder / "probs.pkl", "rb"))
         probs_t = torch.tensor(probs, dtype=torch.float)
     else:
@@ -193,8 +192,13 @@ def main():
 
     # folders to save the checkpoints
     project_root = Path(__file__).resolve().parent
-    out_dir = project_root/"model"/args.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    suffix = ""
+    if args.cls:
+        suffix += "_cls"
+    if args.r_bias:
+        suffix += "_rb"
+
+    out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}")
 
     history = []
     best_dev_loss = float("inf")
@@ -232,6 +236,10 @@ def main():
     print(f"Unique examples seen: {len(seen)}")
     print(f"Dataset size: {len(dataset)}")
     print(f"Coverage: {100 * len(seen) / len(dataset):.2f}%")
+
+    p_out = out_dir / "params.pkl"
+    with open(p_out, "wb") as f:
+          pickle.dump((args.dataset_folder, cls, batch_size, epochs, hidden, heads, layers,args.r_bias),f)
 
     # plot losses
     epochs_plot = [h[0]+1 for h in history]

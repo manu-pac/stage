@@ -146,7 +146,7 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
 
     true_reps = load_reps(rp_folder/"dev_t.pkl")
     false_reps = load_reps(rp_folder/"dev_f.pkl")
-    alt_truths = load_reps(ds_folder/"alt_truths.pkl")
+    alt_truths = pickle.load(open(ds_folder/"alt_truths.pkl"))
     worlds = list(alt_truths["dev_t"].keys())
 
     X = np.concatenate([true_reps, false_reps], axis=0)
@@ -174,29 +174,37 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset_folder", required=True, help='dataset folder')
-    p.add_argument("--reps_folder", required=True)
-    p.add_argument("--dev_frac", type=float, default=0.1,
-                   help="fraction of the combined true+false set held out as dev")
-    p.add_argument("--out", default="online_code_results.json")
-    p.add_argument("--seed", type=int, default=0,
-                   help="seed for the train/dev split, shuffle, and probe init")
+    p.add_argument("--task", required=True, type=int, help="1: classify t/f according to act world. 2: classify t/f according to alt world")
+    p.add_argument("--model", required=True)
+    p.add_argument("--epoch", required=True)
+    p.add_argument("--rep_type", required=True, help="type of the representation that'll be probed (e.g. mean or cls)")
+    p.add_argument("--dataset_folder", default=None, help="name of the folder of the dataset the reps probed refer to")
+
+    p.add_argument("--w_idx", type=int, default=0, help="alternative world to be considered with task 2")
+    p.add_argument("--min_first_block", type=int, default=50, help="drop leading fractions until the first block has at least this many examples")
+
+    #todo: figure out if these are for the probe or about the model
     p.add_argument("--hidden", type=int, default=1000)
     p.add_argument("--hidden_layers", type=int, default=2)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--max_epochs", type=int, default=200)
     p.add_argument("--patience", type=int, default=4)
-    p.add_argument("--min_first_block", type=int, default=50,
-                   help="drop leading fractions until the first block has "
-                        "at least this many examples")
-    p.add_argument("--task", required=True,type=int, help="1: classify t/f according to act world. 2: classify t/f according to alt world")
-    p.add_argument("--w_idx", type=int, help="aternative wolrd to be considered with task 2")
+    p.add_argument("--seed", type=int, default=0, help="seed for the train/dev split, shuffle, and probe init")
+    p.add_argument("--dev_frac", type=float, default=0.1, help="fraction of the combined true+false set held out as dev")
     args = p.parse_args()
 
     project_root = Path(__file__).resolve().parent
-    ds_folder = project_root / "dataset" / args.dataset_folder
-    rp_folder = project_root / "reps" / args.reps_folder
+
+    if args.dataset_folder is None:
+            model_folder = project_root / "model" / args.model 
+            dataset_folder, _, _, _, _, _, _, _ = pickle.load(open(model_folder / "params.pkl", "rb"))
+    else:
+        dataset_folder = args.dataset_folder
+
+    rp_folder = project_root / "reps" / args.model / args.epoch / args.rep_type / dataset_folder
+
+    ds_folder = project_root / "dataset" / dataset_folder
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -205,7 +213,7 @@ def main():
             rp_folder, args.dev_frac, args.seed)
         assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
     elif args.task == 2:
-        X_train, y_train, X_dev, y_dev = build_dataset2(ds_folder, rp_folder, args.dev_frac, args.seed, args.w_idx)
+        X_train, y_train, X_dev, y_dev = build_dataset2(rp_folder, ds_folder, args.dev_frac, args.seed, args.w_idx)
         assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
 
     n = len(X_train)
@@ -264,15 +272,18 @@ def main():
         "portions": portions,
         "config": vars(args),
     }
-    with open(args.out, "w") as f:
-        json.dump(results, f, indent=2)
+
+    suffix = f"-w{args.w_idx}" if args.task == 2 else ""
+    out = project_root / "probe_results" / f"{args.model}-{args.epoch}-{dataset_folder}-{args.rep_type}-{args.task}{suffix}.json"
+
+    with open(out, "w") as f:
+            json.dump(results, f, indent=2)
 
     print(f"\nOnline codelength: {codelength / 1024:.2f} kbits")
     print(f"Uniform codelength: {uniform_total / 1024:.2f} kbits")
     print(f"Compression: {uniform_total / codelength:.2f}x")
     print(f"Standard probe (100% data) dev accuracy: {final_dev_acc:.4f}")
-    print(f"Saved to {args.out}")
-
+    print(f"Saved to {out}")
 
 if __name__ == "__main__":
     main()
