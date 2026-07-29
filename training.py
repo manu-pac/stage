@@ -9,6 +9,7 @@ from torch.utils.data import TensorDataset, DataLoader
 import os
 from torch.utils.data import WeightedRandomSampler
 import matplotlib.pyplot as plt
+import random
 
 number_pl = None
 cls = None
@@ -104,12 +105,12 @@ def eval_loss(dataloader):
     total_loss = 0.0
     n_batches = 0
     with torch.no_grad():
-        for batch_input_ids, batch_attention_mask, batch_idx in dataloader:
-            batch_input_ids = batch_input_ids.to(device)
+        for batch_masked_input, batch_labels, batch_attention_mask in dataloader:
+            batch_masked_input = batch_masked_input.to(device)
+            batch_labels = batch_labels.to(device)
             batch_attention_mask = batch_attention_mask.to(device)
-            masked_input, labels = mask_tokens(batch_input_ids, batch_attention_mask)
-            _, logits = model(masked_input, batch_attention_mask)
-            loss = loss_fn(logits.view(-1, vocab_size), labels.view(-1))
+            _, logits = model(batch_masked_input, batch_attention_mask)
+            loss = loss_fn(logits.view(-1, vocab_size), batch_labels.view(-1))
             total_loss += loss.item()
             n_batches += 1
     model.train()
@@ -127,7 +128,11 @@ def main():
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--r_bias", action="store_true", help="add reporting bias to the creation of the batches")
+    parser.add_argument("--seed", type=int, default=0, help="seed for model init and sampling")
     args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    random.seed(args.seed)
 
     global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id
 
@@ -189,8 +194,19 @@ def main():
     dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
 
     dev_dataset = FormulaDataset(dev_t, max_len)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=batch_size, shuffle=False)
+    dev_dataloader_raw = DataLoader(dev_dataset, batch_size=batch_size, shuffle=False)
 
+    # freeze dev masking pattern once, same for every run/epoch
+    torch.manual_seed(args.seed)  # reuse the same fixed seed so both conditions see identical dev masking
+    fixed_dev_batches = []
+    with torch.no_grad():
+        for batch_input_ids, batch_attention_mask, _ in dev_dataloader_raw:
+            masked_input, labels = mask_tokens(batch_input_ids, batch_attention_mask)
+            fixed_dev_batches.append((masked_input, labels, batch_attention_mask))
+
+    # wrap it as something eval_loss can iterate the same way every time
+    dev_dataloader = fixed_dev_batches
+    
     # folders to save the checkpoints
     project_root = Path(__file__).resolve().parent
     suffix = ""
