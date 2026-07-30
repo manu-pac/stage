@@ -144,8 +144,8 @@ def build_dataset2(rp_folder, dev_frac, seed, w_idx=0):
     """Load true/false representation pickles, label them (1/0), merge,
     shuffle once with `seed`, and split off a dev set."""
 
-    true_reps = load_reps(rp_folder/"dev_t{w_idx}")
-    false_reps = load_reps(rp_folder/"dev_f{w_idx}")
+    true_reps = load_reps(rp_folder/f"dev_t_{w_idx}")
+    false_reps = load_reps(rp_folder/f"dev_f_{w_idx}")
 
     X = np.concatenate([true_reps, false_reps], axis=0)
     y = np.concatenate([np.ones(len(true_reps), dtype=np.int64),
