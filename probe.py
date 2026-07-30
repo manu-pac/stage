@@ -140,21 +140,19 @@ def build_dataset1(reps_folder, dev_frac, seed):
 
     return X_train, y_train, X_dev, y_dev
 
-def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
+def build_dataset2(rp_folder, dev_frac, seed, w_idx=0):
     """Load true/false representation pickles, label them (1/0), merge,
     shuffle once with `seed`, and split off a dev set."""
 
-    true_reps = load_reps(rp_folder/"dev_t")
-    false_reps = load_reps(rp_folder/"dev_f")
-    alt_truths = pickle.load(open(ds_folder/"alt_truths.pkl","rb"))
-    worlds = list(alt_truths["dev_t"].keys())
+    true_reps = load_reps(rp_folder/"dev_t{w_idx}")
+    false_reps = load_reps(rp_folder/"dev_f{w_idx}")
 
     X = np.concatenate([true_reps, false_reps], axis=0)
-
-    y = np.array(alt_truths["dev_t"][worlds[w_idx]] +alt_truths["dev_f"][worlds[w_idx]],dtype=int)
+    y = np.concatenate([np.ones(len(true_reps), dtype=np.int64),
+                        np.zeros(len(false_reps), dtype=np.int64)], axis=0)
 
     print(f"loaded {len(true_reps)} true / {len(false_reps)} false examples, "
-          f"dim={X.shape[1]}")
+            f"dim={X.shape[1]}")
 
     rng = np.random.RandomState(seed)
     order = rng.permutation(len(X))
@@ -169,8 +167,6 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
     X_dev = torch.tensor(X_dev, dtype=torch.float32)
     y_dev = torch.tensor(y_dev, dtype=torch.long)
 
-    print(y_train.sum(), len(y_train))
-    print(y_dev.sum(), len(y_dev))
     return X_train, y_train, X_dev, y_dev
 
 
@@ -214,7 +210,7 @@ def main():
             rp_folder, args.dev_frac, args.seed)
         assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
     elif args.task == 2:
-        X_train, y_train, X_dev, y_dev = build_dataset2(rp_folder, ds_folder, args.dev_frac, args.seed, args.w_idx)
+        X_train, y_train, X_dev, y_dev = build_dataset2(rp_folder, args.dev_frac, args.seed, args.w_idx)
         assert len(X_train) == len(y_train) and len(X_dev) == len(y_dev)
 
     n = len(X_train)

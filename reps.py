@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--dataset_name", help="dataset to get the reps from (e.g. dev_t, dev_f, train)")
     parser.add_argument("--dataset_folder", default=None, help="folder the dataset that will be represented is located on")
     parser.add_argument("--cls", action="store_true", help="get cls reps")
+    parser.add_argument("--alt_world", type=int, default=None)
     args = parser.parse_args()
     # TODO: TROCAR --CLS POR TYPE (E MUDAR DAQ PRA FRENTE)
 
@@ -48,18 +49,24 @@ def main():
 
     r_folder = project_root / "dataset" / dataset_folder  # folder of dataset that will be represented
 
-    r_set_path = r_folder / f"{args.dataset_name}.pkl" # path of dataset that will be represented
-
-    set_t = False if (args.dataset_name=="dev_f") else True 
-
     # reload the world/params the corpus (and hence vocab) was built with
     act_world = pickle.load(open(r_folder / "act_world.pkl", "rb"))
     alt_worlds = pickle.load(open(r_folder / "alt_worlds.pkl", "rb"))
     number_pl, min_depth, max_depth, corpus_size, prop_td, n_worlds = pickle.load(
         open(r_folder / "params.pkl", "rb")
     )
-    tfg.setup(number_pl_=number_pl, max_depth_=max_depth, act_world_=act_world, alt_worlds_=alt_worlds)
- 
+
+    if args.alt_world == None:
+        tfg.setup(number_pl_=number_pl, max_depth_=max_depth, act_world_=act_world, alt_worlds_=alt_worlds)
+    
+    else:
+        tfg.setup(number_pl_=number_pl, max_depth_=max_depth, act_world_=alt_worlds[args.alt_world], alt_worlds_=alt_worlds)
+
+    r_set_path = r_folder / f"{args.dataset_name}.pkl" # path of dataset that will be represented
+
+    set_t = False if (args.dataset_name=="dev_f") else True 
+
+
     # load checkpoint and figure out what we can straight from its weights
     state_dict = torch.load(checkpoint, map_location=device)
     vocab_size_ckpt, max_len = infer_arch_from_state_dict(state_dict)
@@ -136,7 +143,9 @@ def main():
  
     mean_reps = np.concatenate(mean_reps, axis=0)
 
-    out_path = project_root / "reps" / args.model / args.epoch / "mean" / dataset_folder / args.dataset_name
+    suffix = f"_{args.alt_world}" if args.alt_world is not None else ""
+
+    out_path = project_root / "reps" / args.model / args.epoch / "mean" / dataset_folder / f"{args.dataset_name}{suffix}"
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -147,7 +156,7 @@ def main():
 
     if use_cls:
         cls_reps = np.concatenate(cls_reps, axis=0)
-        cls_path = project_root / "reps" / args.model / args.epoch / "cls" / dataset_folder / args.dataset_name
+        cls_path = project_root / "reps" / args.model / args.epoch / "cls" / dataset_folder / f"{args.dataset_name}{suffix}"
         cls_path.parent.mkdir(parents=True, exist_ok=True)
         with open(cls_path, "wb") as f:
             pickle.dump({"indexes": idx_list, "type": "cls", "reps": cls_reps}, f)
