@@ -169,6 +169,8 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
     X_dev = torch.tensor(X_dev, dtype=torch.float32)
     y_dev = torch.tensor(y_dev, dtype=torch.long)
 
+    print(y_train.sum(), len(y_train))
+    print(y_dev.sum(), len(y_dev))
     return X_train, y_train, X_dev, y_dev
 
 
