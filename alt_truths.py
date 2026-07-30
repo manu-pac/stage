@@ -44,7 +44,7 @@ def main():
             truth = f.check(i_func)
             w_truths["dev_f"][world].append(truth)
 
-    print(w_truths)
+    print(w_truths["dev_t"].keys())
  
     mean_path = project_root/ "dataset" / args.folder / "alt_truths.pkl"
     with open(mean_path, "wb") as f:

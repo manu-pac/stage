@@ -146,7 +146,7 @@ def build_dataset2(rp_folder, ds_folder, dev_frac, seed, w_idx=0):
 
     true_reps = load_reps(rp_folder/"dev_t")
     false_reps = load_reps(rp_folder/"dev_f")
-    alt_truths = pickle.load(open(ds_folder/"alt_worlds.pkl","rb"))
+    alt_truths = pickle.load(open(ds_folder/"alt_truths.pkl","rb"))
     worlds = list(alt_truths["dev_t"].keys())
 
     X = np.concatenate([true_reps, false_reps], axis=0)
