@@ -161,7 +161,7 @@ def setup(number_pl_, max_depth_, act_world_, alt_worlds_):
   number_pl = number_pl_
   letters = list(string.ascii_lowercase)[:number_pl]
   act_world = set(act_world_)
-  alt_worlds = set(alt_worlds_)
+  alt_worlds = list(alt_worlds_)
   act_list = sorted(act_world)
   nact_list = sorted(set(letters)-act_world)
   n_worlds = len(alt_worlds) + 1
@@ -206,6 +206,8 @@ def main():
     while len(alt_worlds) < n_worlds:
         t, f = valuation(number_pl, prop_tf)
         alt_worlds.add(frozenset(t))
+
+    alt_worlds = list(alt_worlds)
 
     # actual world:
     act_world = set(alt_worlds.pop())

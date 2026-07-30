@@ -9,8 +9,7 @@ import pickle
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--folder",required=True)
-    p.add_argument("--n_worlds", type=int,help="number of worlds we want the truth of the formulas to be calculated to")
+    p.add_argument("--folder",required=True, help="name of the dataset folder")
 
     args = p.parse_args()
 
@@ -19,7 +18,6 @@ def main():
 
     act_world = pickle.load(open(folder / "act_world.pkl", "rb"))
     alt_worlds = pickle.load(open(folder / "alt_worlds.pkl", "rb"))
-    alt_worlds = sorted(alt_worlds)
 
     dev_t = pickle.load(open(folder / "dev_t.pkl", "rb"))
     dev_f = pickle.load(open(folder / "dev_f.pkl", "rb"))
@@ -31,7 +29,7 @@ def main():
 
     w_truths = {"dev_t":{},"dev_f":{}}
 
-    for w in range(args.n_worlds):
+    for w in range(n_worlds-1):
         world = alt_worlds[w]
         i_func = cl.InterpretationFunc(set(world))
         w_truths["dev_t"][world] = []
@@ -46,6 +44,7 @@ def main():
             truth = f.check(i_func)
             w_truths["dev_f"][world].append(truth)
 
+    print(w_truths)
  
     mean_path = project_root/ "dataset" / args.folder / "alt_truths.pkl"
     with open(mean_path, "wb") as f:
