@@ -129,6 +129,7 @@ def main():
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--r_bias", action="store_true", help="add reporting bias to the creation of the batches")
     parser.add_argument("--seed", type=int, default=0, help="seed for model init and sampling")
+    parser.add_argument("--patience", type=int, deault=5)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -245,11 +246,20 @@ def main():
 
         torch.save(model.state_dict(), out_dir / f"epoch_{epoch + 1}.pt")
         
-        if dev_loss < best_dev_loss:
+        if dev_loss < best_dev_loss - 1e-7:
             best_dev_loss = dev_loss
             best_epoch = epoch + 1
+            bad_epochs = 0
+        else:
+            bad_epochs += 1
+            for g in optimizer.param_groups:  # anneal lr, same pattern as probe.py
+                g["lr"] *= 0.5
+            if bad_epochs >= args.patience:
+                print(f"no dev improvement for {args.patience} epochs, stopping at epoch {epoch + 1}")
+                break
 
     print(f"best epoch: {best_epoch}  best_dev_loss: {best_dev_loss:.4f}")
+    print(f"stopped at epoch: {epoch + 1}")
     print(f"Total examples seen: {total_seen}")
     print(f"Unique examples seen: {len(seen)}")
     print(f"Dataset size: {len(dataset)}")
