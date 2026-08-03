@@ -222,6 +222,7 @@ def main():
     history = []
     best_dev_loss = float("inf")
     best_epoch = None
+    bad_epochs = 0
 
     seen = set()
     total_seen=0
@@ -245,8 +246,8 @@ def main():
         print(f"epoch {epoch+1}/{epochs}  train_loss={train_loss:.4f}  dev_loss={dev_loss:.4f}")
 
         torch.save(model.state_dict(), out_dir / f"epoch_{epoch + 1}.pt")
-        
-        if dev_loss < best_dev_loss - 1e-7:
+
+        if dev_loss < best_dev_loss - 1e-3:
             best_dev_loss = dev_loss
             best_epoch = epoch + 1
             bad_epochs = 0
