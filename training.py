@@ -129,7 +129,7 @@ def main():
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--r_bias", action="store_true", help="add reporting bias to the creation of the batches")
     parser.add_argument("--seed", type=int, default=0, help="seed for model init and sampling")
-    parser.add_argument("--patience", type=int, deault=5)
+    parser.add_argument("--patience", type=int, default=5)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
