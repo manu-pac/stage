@@ -216,7 +216,7 @@ def main():
     if args.r_bias:
         suffix += "_rb"
 
-    out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}_{args.dataset_folder}")
+    out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}_seed{args.seed}_{args.dataset_folder}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     history = []
