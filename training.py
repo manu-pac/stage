@@ -128,8 +128,9 @@ def main():
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--r_bias", action="store_true", help="add reporting bias to the creation of the batches")
+    parser.add_argument("--bias_power", type=float, default=1.0, help="exponent applied to prob() before it's used as a sampling weight (only when --r_bias is set); >1 sharpens the contrast between high- and low-informativity formulas, 1.0 = original behavior")
     parser.add_argument("--seed", type=int, default=0, help="seed for model init and sampling")
-    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--patience", type=int, default=5, help="stop after this many consecutive epochs with no dev loss improvement; halves lr on each bad epoch")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -179,7 +180,7 @@ def main():
     #training
     if args.r_bias:
         probs = pickle.load(open(folder / "probs.pkl", "rb"))
-        probs_t = torch.tensor(probs, dtype=torch.float)
+        probs_t = torch.tensor(probs, dtype=torch.float) ** args.bias_power
     else:
         probs_t = torch.ones(len(dataset)) #if flag --bias is not activated, the random sampling happens uniformly 
 
@@ -215,6 +216,8 @@ def main():
         suffix += "_cls"
     if args.r_bias:
         suffix += "_rb"
+        if args.bias_power != 1.0:
+            suffix += f"_bp{args.bias_power:g}"
 
     out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}_seed{args.seed}_{args.dataset_folder}")
     out_dir.mkdir(parents=True, exist_ok=True)
