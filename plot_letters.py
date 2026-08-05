@@ -1,9 +1,20 @@
 """
-        --model \
-        --epoch \
-        --output 
+        --model 128bs_150e_128hl_4h_2l_rb_seed0_pilot_run \
+        --epoch 10 \
+        --output my_run
 
-visualizes the model's non-contextual token embedding table
+Visualizes the model's non-contextual token embedding table (tok_emb.weight),
+not any pooled/contextual representation. One point per vocabulary token
+(bigram, if the model was trained with --tokenization bigram), colored by
+the single letter that token contains. The question this answers: did the
+model, on its own, learn to place all bigrams containing the same letter
+near each other in embedding space, despite never seeing that letter as an
+atomic token?
+
+If the model was trained with char-level tokenization instead, this still
+runs, but it's not very interesting: each letter already has exactly one
+dedicated token/embedding, so there's nothing to "cluster" - you'd just get
+one point per letter.
 """
 
 import argparse
@@ -16,6 +27,8 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from sklearn.manifold import TSNE
+
+import classes as cl
 
 
 def build_vocab(number_pl, use_cls, tokenization="char"):
@@ -33,6 +46,26 @@ def build_vocab(number_pl, use_cls, tokenization="char"):
     return vocab, tok_to_id
 
 
+def valid_bigrams_for_letter(letter, letters):
+    # Every syntactic position a letter can occupy: negated, left conjunct,
+    # right conjunct. Build each minimal formula for real via classes.py and
+    # read the bigrams off its actual str() output - this way we don't have
+    # to guess/hardcode classes.py's exact spacing or parenthesization.
+    other = next((c for c in letters if c != letter), letter)  # any second letter to pair with
+    formulas = [
+        cl.Neg(cl.PLetter(letter)),
+        cl.Conj(cl.PLetter(letter), cl.PLetter(other)),
+        cl.Conj(cl.PLetter(other), cl.PLetter(letter)),
+    ]
+    bigrams = set()
+    for f in formulas:
+        s = str(f)
+        bigrams.update(s[j:j+2] for j in range(len(s) - 1))
+    # keep only the bigrams that actually contain this letter - the
+    # constructed formulas above also contain `other`'s bigrams incidentally
+    return {b for b in bigrams if letter in b}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True,
@@ -42,6 +75,8 @@ def main():
     parser.add_argument("--dataset_folder", type=str, default=None,
                          help="dataset folder to pull number_pl from; defaults to the "
                               "dataset the model was trained on")
+    parser.add_argument("--output", type=str, required=True,
+                         help="folder name to save the plot into, under plots/<output>/")
     parser.add_argument("--perplexity", type=float, default=30.0)
     parser.add_argument("--n-sample", type=int, default=None,
                          help="subsample this many tokens before running t-SNE. "
@@ -53,6 +88,9 @@ def main():
     model_folder = project_root / "model" / args.model
     checkpoint = model_folder / f"epoch_{args.epoch}.pt"
 
+    # params.pkl written by training.py: (dataset_folder, cls, bs, epochs, hidden, heads, layers, r_bias, tokenization)
+    # tolerant unpack in case you're running this against an older checkpoint saved
+    # before the tokenization field existed
     params = pickle.load(open(model_folder / "params.pkl", "rb"))
     dataset_folder_trained_on, cls_model, *_rest = params
     tokenization = _rest[-1] if len(_rest) >= 5 else "char"
@@ -73,17 +111,31 @@ def main():
             f"number_pl={number_pl} - check these match how the model was trained."
         )
 
-    letters = set(string.ascii_lowercase[:number_pl])
+    letters = list(string.ascii_lowercase)[:number_pl]
+
+    if tokenization == "bigram":
+        valid = set()
+        letter_of = {}
+        for letter in letters:
+            for b in valid_bigrams_for_letter(letter, letters):
+                valid.add(b)
+                letter_of[b] = letter  # each valid bigram contains exactly one letter by construction
+        print(f"{len(valid)} valid single-letter bigram tokens derived from grammar "
+              f"(out of {len(vocab)} total vocab entries)")
+    else:
+        valid = set(letters)
+        letter_of = {l: l for l in letters}
+
     tokens, tok_labels, rows = [], [], []
-    for tok, idx in tok_to_id.items():
-        contained = [c for c in tok if c in letters]
-        if len(contained) == 1:
-            tokens.append(tok)
-            tok_labels.append(contained[0])
-            rows.append(emb[idx])
+    for tok in valid:
+        if tok not in tok_to_id:
+            continue  # shouldn't happen if build_vocab matches training, but don't crash if it does
+        tokens.append(tok)
+        tok_labels.append(letter_of[tok])
+        rows.append(emb[tok_to_id[tok]])
 
     if not rows:
-        raise ValueError("No single-letter tokens found - check tokenization/vocab reconstruction.")
+        raise ValueError("No valid single-letter tokens found - check tokenization/vocab reconstruction.")
 
     embeddings = np.stack(rows)
     labels = np.array(tok_labels)
@@ -121,7 +173,7 @@ def main():
               f"{args.model} (epoch {args.epoch}, {tokenization} tokenization)")
     plt.legend(bbox_to_anchor=(1.02, 1), fontsize=7, ncol=1)
 
-    out_dir = project_root / "plots"
+    out_dir = project_root / "plots" / args.output
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{args.model}_epoch{args.epoch}_tsne_letters.png"
 
