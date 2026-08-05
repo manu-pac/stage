@@ -75,8 +75,6 @@ def main():
     parser.add_argument("--dataset_folder", type=str, default=None,
                          help="dataset folder to pull number_pl from; defaults to the "
                               "dataset the model was trained on")
-    parser.add_argument("--output", type=str, required=True,
-                         help="folder name to save the plot into, under plots/<output>/")
     parser.add_argument("--perplexity", type=float, default=30.0)
     parser.add_argument("--n-sample", type=int, default=None,
                          help="subsample this many tokens before running t-SNE. "
@@ -173,7 +171,7 @@ def main():
               f"{args.model} (epoch {args.epoch}, {tokenization} tokenization)")
     plt.legend(bbox_to_anchor=(1.02, 1), fontsize=7, ncol=1)
 
-    out_dir = project_root / "plots" / args.output
+    out_dir = project_root / "plots"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{args.model}_epoch{args.epoch}_tsne_letters.png"
 
