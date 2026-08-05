@@ -234,6 +234,8 @@ def main():
         suffix += "_rb"
         if args.bias_power != 1.0:
             suffix += f"_bp{args.bias_power:g}"
+    if tokenization == "bigram": 
+        suffix += "_bigram"
 
     out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}_seed{args.seed}_{args.dataset_folder}")
     out_dir.mkdir(parents=True, exist_ok=True)
