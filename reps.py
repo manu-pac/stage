@@ -14,9 +14,15 @@ def infer_arch_from_state_dict(state_dict):
     return vocab_size, max_len
 
 
-def build_vocab(number_pl, use_cls):
+def build_vocab(number_pl, use_cls, tokenization="char"):
     letters = list(__import__("string").ascii_lowercase)[:number_pl]
-    vocab = (["[CLS]"] if use_cls else []) + ["[PAD]", "[MASK]", "∧", "¬", "(", ")", " "] + letters
+    symbols = ["∧", "¬", "(", ")", " "]
+    if tokenization == "bigram":
+        alphabet = symbols + letters
+        vocab = (["[CLS]"] if use_cls else []) + ["[PAD]", "[MASK]"] + \
+                [c1 + c2 for c1 in alphabet for c2 in alphabet]
+    else:
+        vocab = (["[CLS]"] if use_cls else []) + ["[PAD]", "[MASK]"] + symbols + letters
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
     return vocab, tok_to_id
 
@@ -38,7 +44,7 @@ def main():
     project_root = Path(__file__).resolve().parent
     model_folder = project_root / "model" / args.model
     checkpoint = model_folder / f"epoch_{args.epoch}.pt" 
-    t_folder_name, cls_model, bs, e, hidden, heads, layers, rb = pickle.load(open(model_folder / "params.pkl", "rb"))
+    t_folder_name, cls_model, bs, e, hidden, heads, layers, rb, tokenization = pickle.load(open(model_folder / "params.pkl", "rb"))
 
     t_folder = project_root / "dataset" / t_folder_name # folder of the dataset the model was trained in
 
@@ -80,7 +86,7 @@ def main():
 
     assert number_pl == t_number_pl, (f"target dataset's number_pl doesn't match training's")
 
-    vocab, tok_to_id = build_vocab(t_number_pl, cls_model)
+    vocab, tok_to_id = build_vocab(t_number_pl, cls_model, tokenization)
 
     if len(vocab) != vocab_size_ckpt:
         raise ValueError(
@@ -103,7 +109,8 @@ def main():
     tr.cls = cls_model
     tr.tok_to_id = tok_to_id
     tr.vocab = vocab
-    tr.letters = list(__import__("string").ascii_lowercase)[:t_number_pl] 
+    tr.letters = list(__import__("string").ascii_lowercase)[:t_number_pl]
+    tr.tokenization = tokenization 
 
     model = tr.EncoderTransformer()
     model.load_state_dict(state_dict)

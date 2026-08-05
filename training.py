@@ -35,15 +35,22 @@ best_dev_loss = None
 best_epoch = None
 
 # tokenization
-def encode(i,max_len,t=True):
-    formula = str(tfg.true_le(i)) if t else str(tfg.false_le(i)) # the formulas are built based on their truthness to the act world
-    ids = [tok_to_id[ch] for ch in formula]
+def encode(i, max_len, t=True):
+    formula = str(tfg.true_le(i)) if t else str(tfg.false_le(i))
+    if tokenization == "bigram":
+        toks = [formula[j:j+2] for j in range(len(formula) - 1)]
+    else:
+        toks = list(formula)
+    ids = [tok_to_id[tok] for tok in toks]
     if cls:
         ids = [tok_to_id["[CLS]"]] + ids
     real_len = len(ids)
     ids += [tok_to_id["[PAD]"]] * (max_len - real_len)
-    mask = [1]*real_len + [0]*(max_len-real_len) # padding masking
+    mask = [1]*real_len + [0]*(max_len - real_len)
     return ids, mask
+
+def seq_len(s):
+    return len(s) - 1 if tokenization == "bigram" else len(s)
 
 # model
 class EncoderTransformer(nn.Module):
@@ -131,16 +138,18 @@ def main():
     parser.add_argument("--bias_power", type=float, default=1.0, help="exponent applied to prob() before it's used as a sampling weight (only when --r_bias is set); >1 sharpens the contrast between high- and low-informativity formulas, 1.0 = original behavior")
     parser.add_argument("--seed", type=int, default=0, help="seed for model init and sampling")
     parser.add_argument("--patience", type=int, default=5, help="stop after this many consecutive epochs with no dev loss improvement; halves lr on each bad epoch")
+    parser.add_argument("--tokenization", choices=["char","bigram"], default="char") 
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
     random.seed(args.seed)
 
-    global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id
+    global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id, tokenization
 
     folder =  Path(__file__).resolve().parent / "dataset" / args.dataset_folder
 
     cls = args.cls
+    tokenization = args.tokenization
     batch_size = args.batch_size
     epochs = args.epochs
     hidden = args.hidden
@@ -160,9 +169,16 @@ def main():
 
     # build pieces for tokenization
     letters = list(string.ascii_lowercase)[:number_pl]
-    vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"," "] + letters
+    symbols = ["∧", "¬", "(", ")", " "]
+    alphabet = symbols + letters
+    if tokenization == "bigram":
+        vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]"] + [c1+c2 for c1 in alphabet for c2 in alphabet]
+    else:
+        vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"," "] + letters
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
-    max_len = max(max(len(str(tfg.true_le(i))) for i in idx_t), max(len(str(tfg.true_le(i))) for i in dev_t), max(len(str(tfg.false_le(i))) for i in dev_f))
+    max_len = max(max(seq_len(str(tfg.true_le(i))) for i in idx_t),
+              max(seq_len(str(tfg.true_le(i))) for i in dev_t),
+              max(seq_len(str(tfg.false_le(i))) for i in dev_f))
     if cls:
         max_len += 1
     vocab_size = len(vocab)
@@ -271,7 +287,7 @@ def main():
 
     p_out = out_dir / "params.pkl"
     with open(p_out, "wb") as f:
-          pickle.dump((args.dataset_folder, cls, batch_size, epochs, hidden, heads, layers,args.r_bias),f)
+          pickle.dump((args.dataset_folder, cls, batch_size, epochs, hidden, heads, layers,args.r_bias, tokenization),f)
 
     # plot losses
     epochs_plot = [h[0]+1 for h in history]

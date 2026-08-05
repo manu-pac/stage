@@ -195,7 +195,7 @@ def main():
 
     if args.dataset_folder is None:
             model_folder = project_root / "model" / args.model 
-            dataset_folder, _, _, _, _, _, _, _ = pickle.load(open(model_folder / "params.pkl", "rb"))
+            dataset_folder, *_ = pickle.load(open(model_folder / "params.pkl", "rb"))
     else:
         dataset_folder = args.dataset_folder
 
