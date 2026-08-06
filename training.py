@@ -291,6 +291,8 @@ def main():
     with open(p_out, "wb") as f:
           pickle.dump((args.dataset_folder, cls, batch_size, epochs, hidden, heads, layers,args.r_bias, tokenization),f)
 
+    with open(out_dir / "vocab.pkl", "wb") as f:
+        pickle.dump(vocab, f)
     # plot losses
     epochs_plot = [h[0]+1 for h in history]
     train_losses = [h[1] for h in history]

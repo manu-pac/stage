@@ -1,22 +1,3 @@
-"""
-        --model 128bs_150e_128hl_4h_2l_rb_seed0_pilot_run \
-        --epoch 10 \
-        --output my_run
-
-Visualizes the model's non-contextual token embedding table (tok_emb.weight),
-not any pooled/contextual representation. One point per vocabulary token
-(bigram, if the model was trained with --tokenization bigram), colored by
-the single letter that token contains. The question this answers: did the
-model, on its own, learn to place all bigrams containing the same letter
-near each other in embedding space, despite never seeing that letter as an
-atomic token?
-
-If the model was trained with char-level tokenization instead, this still
-runs, but it's not very interesting: each letter already has exactly one
-dedicated token/embedding, so there's nothing to "cluster" - you'd just get
-one point per letter.
-"""
-
 import argparse
 import pickle
 import string
@@ -32,8 +13,7 @@ import classes as cl
 
 
 def build_vocab(number_pl, use_cls, tokenization="char"):
-    # mirrors reps.py / training.py's vocab construction - keep these in sync
-    # if you change one, change the other, or reps/checkpoints won't line up.
+    # mirrors reps.py / training.py's vocab construction
     letters = list(string.ascii_lowercase)[:number_pl]
     symbols = ["∧", "¬", "(", ")", " "]
     if tokenization == "bigram":
@@ -47,10 +27,6 @@ def build_vocab(number_pl, use_cls, tokenization="char"):
 
 
 def valid_bigrams_for_letter(letter, letters):
-    # Every syntactic position a letter can occupy: negated, left conjunct,
-    # right conjunct. Build each minimal formula for real via classes.py and
-    # read the bigrams off its actual str() output - this way we don't have
-    # to guess/hardcode classes.py's exact spacing or parenthesization.
     other = next((c for c in letters if c != letter), letter)  # any second letter to pair with
     formulas = [
         cl.Neg(cl.PLetter(letter)),
@@ -86,18 +62,27 @@ def main():
     model_folder = project_root / "model" / args.model
     checkpoint = model_folder / f"epoch_{args.epoch}.pt"
 
-    # params.pkl written by training.py: (dataset_folder, cls, bs, epochs, hidden, heads, layers, r_bias, tokenization)
-    # tolerant unpack in case you're running this against an older checkpoint saved
-    # before the tokenization field existed
     params = pickle.load(open(model_folder / "params.pkl", "rb"))
     dataset_folder_trained_on, cls_model, *_rest = params
-    tokenization = _rest[-1] if len(_rest) >= 5 else "char"
+    tokenization = _rest[-1] if len(_rest) >= 7 else "char"
 
     dataset_folder = args.dataset_folder or dataset_folder_trained_on
     ds_params_path = project_root / "dataset" / dataset_folder / "params.pkl"
     number_pl, *_ = pickle.load(open(ds_params_path, "rb"))
 
-    vocab, tok_to_id = build_vocab(number_pl, cls_model, tokenization)
+    vocab_path = model_folder / "vocab.pkl"
+    if vocab_path.exists():
+        vocab = pickle.load(open(vocab_path, "rb"))
+        tok_to_id = {tok: i for i, tok in enumerate(vocab)}
+    else:
+        print("WARNING: no vocab.pkl found for this model - falling back to "
+              "independently reconstructing the vocab from scratch. This can "
+              "SILENTLY produce a wrong token<->embedding-row mapping if this "
+              "script's build_vocab() doesn't order things in EXACTLY the same "
+              "way training.py did - same size, wrong contents, no error raised. "
+              "Add the vocab.pkl save to training.py (see accompanying note) and "
+              "retrain before trusting this plot.")
+        vocab, tok_to_id = build_vocab(number_pl, cls_model, tokenization)
 
     state_dict = torch.load(checkpoint, map_location="cpu")
     emb = state_dict["tok_emb.weight"].numpy()  # (vocab_size, hidden)
@@ -140,6 +125,24 @@ def main():
     print(f"{len(embeddings)} single-letter tokens found across {len(set(tok_labels))} letters "
           f"(tokenization={tokenization})")
 
+    # Sanity check BEFORE t-SNE: is there any signal at all in the raw
+    # high-dimensional embeddings, or is t-SNE just failing to show something
+    # that's there? t-SNE can distort real structure into apparent noise,
+    # especially with few points per class and a perplexity that's too high
+    # for the sample size - so check the untransformed vectors directly.
+    norm = embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-9)
+    sim = norm @ norm.T
+    same_letter = labels[:, None] == labels[None, :]
+    np.fill_diagonal(same_letter, False)
+    diff_letter = ~same_letter
+    np.fill_diagonal(diff_letter, False)
+    intra = sim[same_letter].mean() if same_letter.any() else float("nan")
+    inter = sim[diff_letter].mean()
+    print(f"raw embedding space (pre-t-SNE): mean cosine similarity "
+          f"same-letter={intra:.4f} vs different-letter={inter:.4f} "
+          f"(gap={intra - inter:+.4f}) - gap near 0 means no real signal, "
+          f"not just a bad projection")
+
     if args.n_sample is not None and args.n_sample < len(embeddings):
         idx = np.random.RandomState(args.random_state).choice(
             len(embeddings), size=args.n_sample, replace=False)
@@ -151,6 +154,12 @@ def main():
     if eff_perplexity != args.perplexity:
         print(f"reducing perplexity {args.perplexity} -> {eff_perplexity} "
               f"(only {len(embeddings)} points)")
+    pts_per_class = len(embeddings) / max(len(set(tok_labels)), 1)
+    if eff_perplexity > pts_per_class * 3:
+        print(f"NOTE: perplexity ({eff_perplexity}) is large relative to points per "
+              f"letter (~{pts_per_class:.1f}) - t-SNE may be blending letters together "
+              f"regardless of whether the embeddings actually cluster. Try "
+              f"--perplexity {max(2, int(pts_per_class))} or lower.")
 
     tsne = TSNE(n_components=2, perplexity=eff_perplexity, random_state=args.random_state,
                 init="pca", learning_rate="auto")
