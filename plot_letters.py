@@ -26,6 +26,15 @@ def build_vocab(number_pl, use_cls, tokenization="bigram"):
 
 
 def valid_bigrams(letters, tokenization="bigram"):
+    # every letter can only ever be preceded by "(", "¬", or " ", and only ever
+    # followed by ")" or " " (see Neg/Conj __str__) - so these 5 bigrams per
+    # letter are the complete, exact set; nothing is approximate here.
+    # Under bigram2 (non-overlapping), only every other adjacent pair survives
+    # as an actual token, so not all 5 are guaranteed to occur for a given
+    # letter - but a letter landing on an odd boundary instead gets padded
+    # with the filler token, which never occurs under plain overlapping
+    # bigram tokenization. So for bigram2 we keep the same 5 candidates
+    # (still the only ones that can ever occur) and add the filler token.
     letter_of = {}
     for letter in letters:
         for tok in (f"¬{letter}", f"({letter}", f" {letter}", f"{letter} ", f"{letter})"):
@@ -44,7 +53,10 @@ def main():
     parser.add_argument("--dataset_folder", type=str, default=None,
                          help="dataset folder to pull number_pl from; defaults to the "
                               "dataset the model was trained on")
-    parser.add_argument("--perplexity", type=float, default=4)
+    parser.add_argument("--perplexity", type=float, default=4,
+                         help="fixed at 4 by default: each letter has exactly 5 bigram "
+                              "tokens under this grammar (6 under bigram2), and "
+                              "perplexity should stay below that")
     parser.add_argument("--random-state", type=int, default=42)
     args = parser.parse_args()
 
@@ -100,6 +112,9 @@ def main():
         mask = labels == letter
         plt.scatter(coords[mask, 0], coords[mask, 1], color=letter_to_color[letter],
                     label=letter, alpha=0.75, s=25)
+    for (x, y), tok in zip(coords, tokens):
+        plt.annotate(tok, (x, y), fontsize=6, alpha=0.8,
+                     xytext=(3, 3), textcoords="offset points")
     plt.xlabel("t-SNE dim 1")
     plt.ylabel("t-SNE dim 2")
     plt.title(f"t-SNE of non-contextual token embeddings, colored by letter\n"
