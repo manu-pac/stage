@@ -9,26 +9,29 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from sklearn.manifold import TSNE
 
+BIGRAM2_FILLER = "_"  # must match training.py's BIGRAM2_FILLER
 
-def build_vocab(number_pl, use_cls):
-    # mirrors training.py's bigram vocab construction
+
+def build_vocab(number_pl, use_cls, tokenization="bigram"):
+    # mirrors training.py's bigram/bigram2 vocab construction
     letters = list(string.ascii_lowercase)[:number_pl]
     symbols = ["∧", "¬", "(", ")", " "]
     alphabet = symbols + letters
     vocab = (["[CLS]"] if use_cls else []) + ["[PAD]", "[MASK]"] + \
             [c1 + c2 for c1 in alphabet for c2 in alphabet]
+    if tokenization == "bigram2":
+        vocab += [c + BIGRAM2_FILLER for c in alphabet]
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
     return vocab, tok_to_id
 
 
-def valid_bigrams(letters):
-    # every letter can only ever be preceded by "(", "¬", or " ", and only ever
-    # followed by ")" or " " (see Neg/Conj __str__) - so these 5 bigrams per
-    # letter are the complete, exact set; nothing is approximate here.
+def valid_bigrams(letters, tokenization="bigram"):
     letter_of = {}
     for letter in letters:
         for tok in (f"¬{letter}", f"({letter}", f" {letter}", f"{letter} ", f"{letter})"):
             letter_of[tok] = letter
+        if tokenization == "bigram2":
+            letter_of[f"{letter}{BIGRAM2_FILLER}"] = letter
     return letter_of
 
 
@@ -41,10 +44,7 @@ def main():
     parser.add_argument("--dataset_folder", type=str, default=None,
                          help="dataset folder to pull number_pl from; defaults to the "
                               "dataset the model was trained on")
-    parser.add_argument("--perplexity", type=float, default=4,
-                         help="fixed at 4 by default: each letter has exactly 5 bigram "
-                              "tokens under this grammar, and perplexity should stay "
-                              "below that")
+    parser.add_argument("--perplexity", type=float, default=4)
     parser.add_argument("--random-state", type=int, default=42)
     args = parser.parse_args()
 
@@ -54,12 +54,13 @@ def main():
 
     params = pickle.load(open(model_folder / "params.pkl", "rb"))
     dataset_folder_trained_on, cls_model, *_rest = params
+    tokenization = _rest[-1] if len(_rest) >= 7 else "bigram"
 
     dataset_folder = args.dataset_folder or dataset_folder_trained_on
     ds_params_path = project_root / "dataset" / dataset_folder / "params.pkl"
     number_pl, *_ = pickle.load(open(ds_params_path, "rb"))
 
-    vocab, tok_to_id = build_vocab(number_pl, cls_model)
+    vocab, tok_to_id = build_vocab(number_pl, cls_model, tokenization)
 
     state_dict = torch.load(checkpoint, map_location="cpu")
     emb = state_dict["tok_emb.weight"].numpy()  # (vocab_size, hidden)
@@ -67,12 +68,12 @@ def main():
     if emb.shape[0] != len(vocab):
         raise ValueError(
             f"Rebuilt vocab size ({len(vocab)}) doesn't match checkpoint's embedding "
-            f"table ({emb.shape[0]}). cls={cls_model} number_pl={number_pl} - check "
-            f"these match how the model was trained."
+            f"table ({emb.shape[0]}). cls={cls_model} number_pl={number_pl} "
+            f"tokenization={tokenization!r} - check these match how the model was trained."
         )
 
     letters = list(string.ascii_lowercase)[:number_pl]
-    letter_of = valid_bigrams(letters)
+    letter_of = valid_bigrams(letters, tokenization)
 
     tokens, tok_labels, rows = [], [], []
     for tok, letter in letter_of.items():
@@ -102,7 +103,7 @@ def main():
     plt.xlabel("t-SNE dim 1")
     plt.ylabel("t-SNE dim 2")
     plt.title(f"t-SNE of non-contextual token embeddings, colored by letter\n"
-              f"{args.model} (epoch {args.epoch}, bigram tokenization)")
+              f"{args.model} (epoch {args.epoch}, {tokenization} tokenization)")
     plt.legend(bbox_to_anchor=(1.02, 1), fontsize=7, ncol=1)
 
     out_dir = project_root / "plots"

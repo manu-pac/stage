@@ -35,10 +35,16 @@ best_dev_loss = None
 best_epoch = None
 
 # tokenization
+BIGRAM2_FILLER = "_"  # placeholder second char for the odd trailing character, bigram2 only
+
 def encode(i, max_len, t=True):
     formula = str(tfg.true_le(i)) if t else str(tfg.false_le(i))
     if tokenization == "bigram":
         toks = [formula[j:j+2] for j in range(len(formula) - 1)]
+    elif tokenization == "bigram2":
+        toks = [formula[j:j+2] for j in range(0, len(formula), 2)]  # non-overlapping pairs
+        if len(toks[-1]) == 1:  # odd length: pad the leftover char with the filler
+            toks[-1] = toks[-1] + BIGRAM2_FILLER
     else:
         toks = list(formula)
     ids = [tok_to_id[tok] for tok in toks]
@@ -50,7 +56,12 @@ def encode(i, max_len, t=True):
     return ids, mask
 
 def seq_len(s):
-    return len(s) - 1 if tokenization == "bigram" else len(s)
+    if tokenization == "bigram":
+        return len(s) - 1
+    elif tokenization == "bigram2":
+        return -(-len(s) // 2)  # ceil(len(s) / 2)
+    else:
+        return len(s)
 
 # model
 class EncoderTransformer(nn.Module):
@@ -138,7 +149,7 @@ def main():
     parser.add_argument("--bias_power", type=float, default=1.0, help="exponent applied to prob() before it's used as a sampling weight (only when --r_bias is set); >1 sharpens the contrast between high- and low-informativity formulas, 1.0 = original behavior")
     parser.add_argument("--seed", type=int, default=0, help="seed for model init and sampling")
     parser.add_argument("--patience", type=int, default=5, help="stop after this many consecutive epochs with no dev loss improvement; halves lr on each bad epoch")
-    parser.add_argument("--tokenization", choices=["char","bigram"], default="char") 
+    parser.add_argument("--tokenization", choices=["char","bigram","bigram2"], default="char") 
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -173,6 +184,10 @@ def main():
     alphabet = symbols + letters
     if tokenization == "bigram":
         vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]"] + [c1+c2 for c1 in alphabet for c2 in alphabet]
+    elif tokenization == "bigram2":
+        vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]"] + \
+                [c1+c2 for c1 in alphabet for c2 in alphabet] + \
+                [c + BIGRAM2_FILLER for c in alphabet]  # padded tokens for odd trailing chars
     else:
         vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"," "] + letters
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
@@ -234,8 +249,10 @@ def main():
         suffix += "_rb"
         if args.bias_power != 1.0:
             suffix += f"_bp{args.bias_power:g}"
-    if tokenization == "bigram": 
+    if tokenization == "bigram":
         suffix += "_bigram"
+    elif tokenization == "bigram2":
+        suffix += "_bigram2"
 
     out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}_seed{args.seed}_{args.dataset_folder}")
     out_dir.mkdir(parents=True, exist_ok=True)
