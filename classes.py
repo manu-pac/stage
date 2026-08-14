@@ -147,7 +147,7 @@ class Conj(Formula):
 
 	# Returns a string representation of the object. Used to print the object in a readable way.
 	def __str__(self):
-		return f"({self._phi} ∧ {self._psi})"
+		return f"({self._phi}∧{self._psi})"
 
 	# Returns a string representation of the object. Also used to print the object in a readable way.
 	def __repr__(self):
