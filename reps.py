@@ -16,7 +16,7 @@ def infer_arch_from_state_dict(state_dict):
 
 def build_vocab(number_pl, use_cls, tokenization="char"):
     letters = list(__import__("string").ascii_lowercase)[:number_pl]
-    symbols = ["∧", "¬", "(", ")", " "]
+    symbols = ["∧", "¬", "(", ")"]
     if tokenization == "bigram":
         alphabet = symbols + letters
         vocab = (["[CLS]"] if use_cls else []) + ["[PAD]", "[MASK]"] + \
