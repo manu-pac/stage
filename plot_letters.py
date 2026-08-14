@@ -17,7 +17,7 @@ BIGRAM2_FILLER = "_"  # must match training.py's BIGRAM2_FILLER
 def build_vocab(number_pl, use_cls, tokenization="bigram"):
     # mirrors training.py's bigram/bigram2 vocab construction
     letters = list(string.ascii_lowercase)[:number_pl]
-    symbols = ["∧", "¬", "(", ")", " "]
+    symbols = ["∧", "¬", "(", ")"]
     alphabet = symbols + letters
     vocab = (["[CLS]"] if use_cls else []) + ["[PAD]", "[MASK]"] + \
             [c1 + c2 for c1 in alphabet for c2 in alphabet]
@@ -75,7 +75,7 @@ def valid_bigrams(letters, tokenization="bigram"):
     # (still the only ones that can ever occur) and add the filler token.
     letter_of = {}
     for letter in letters:
-        for tok in (f"¬{letter}", f"({letter}", f" {letter}", f"{letter} ", f"{letter})"):
+        for tok in (f"¬{letter}", f"({letter}", f"∧{letter}", f"{letter}∧", f"{letter})"):
             letter_of[tok] = letter
         if tokenization == "bigram2":
             letter_of[f"{letter}{BIGRAM2_FILLER}"] = letter

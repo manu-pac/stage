@@ -180,7 +180,7 @@ def main():
 
     # build pieces for tokenization
     letters = list(string.ascii_lowercase)[:number_pl]
-    symbols = ["∧", "¬", "(", ")", " "]
+    symbols = ["∧", "¬", "(", ")"]
     alphabet = symbols + letters
     if tokenization == "bigram":
         vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]"] + [c1+c2 for c1 in alphabet for c2 in alphabet]
@@ -189,7 +189,7 @@ def main():
                 [c1+c2 for c1 in alphabet for c2 in alphabet] + \
                 [c + BIGRAM2_FILLER for c in alphabet]  # padded tokens for odd trailing chars
     else:
-        vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"," "] + letters
+        vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"] + letters
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
     max_len = max(max(seq_len(str(tfg.true_le(i))) for i in idx_t),
               max(seq_len(str(tfg.true_le(i))) for i in dev_t),
