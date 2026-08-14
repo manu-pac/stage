@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from sklearn.manifold import TSNE
 
+import tf_generation as tfg
+
 BIGRAM2_FILLER = "_"  # must match training.py's BIGRAM2_FILLER
 
 
@@ -25,16 +27,31 @@ def build_vocab(number_pl, use_cls, tokenization="bigram"):
     return vocab, tok_to_id
 
 
+def letters_used_in_corpus(dataset_folder_path, number_pl, max_depth, act_world, alt_worlds, letters):
+    # scans train.pkl/dev_t.pkl/dev_f.pkl (the same files training.py loads) and
+    # rebuilds each formula's string via tf_generation, same as training does,
+    # to find which letters actually occur anywhere in the sampled corpus -
+    # the vocab has a slot for every letter up to number_pl, but not every
+    # letter is guaranteed to actually show up in the specific formulas sampled.
+    tfg.setup(number_pl_=number_pl, max_depth_=max_depth, act_world_=act_world, alt_worlds_=alt_worlds)
+    letters = set(letters)
+    seen = set()
+    for fname, is_true in (("train.pkl", True), ("dev_t.pkl", True), ("dev_f.pkl", False)):
+        fpath = dataset_folder_path / fname
+        if not fpath.exists():
+            continue
+        idx_list = pickle.load(open(fpath, "rb"))
+        for i in idx_list:
+            formula_str = str(tfg.true_le(i)) if is_true else str(tfg.false_le(i))
+            seen.update(c for c in formula_str if c in letters)
+            if seen == letters:
+                break  # every letter already accounted for, no need to keep scanning
+        if seen == letters:
+            break
+    return seen
+
+
 def valid_bigrams(letters, tokenization="bigram"):
-    # every letter can only ever be preceded by "(", "¬", or " ", and only ever
-    # followed by ")" or " " (see Neg/Conj __str__) - so these 5 bigrams per
-    # letter are the complete, exact set; nothing is approximate here.
-    # Under bigram2 (non-overlapping), only every other adjacent pair survives
-    # as an actual token, so not all 5 are guaranteed to occur for a given
-    # letter - but a letter landing on an odd boundary instead gets padded
-    # with the filler token, which never occurs under plain overlapping
-    # bigram tokenization. So for bigram2 we keep the same 5 candidates
-    # (still the only ones that can ever occur) and add the filler token.
     letter_of = {}
     for letter in letters:
         for tok in (f"¬{letter}", f"({letter}", f" {letter}", f"{letter} ", f"{letter})"):
@@ -58,6 +75,10 @@ def main():
                               "tokens under this grammar (6 under bigram2), and "
                               "perplexity should stay below that")
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--all_letters", action="store_true",
+                         help="plot every letter up to number_pl, even ones that never "
+                              "actually occur in this dataset's train/dev_t/dev_f corpus "
+                              "(default: only plot letters that actually appear)")
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parent
@@ -69,8 +90,9 @@ def main():
     tokenization = _rest[-1] if len(_rest) >= 7 else "bigram"
 
     dataset_folder = args.dataset_folder or dataset_folder_trained_on
-    ds_params_path = project_root / "dataset" / dataset_folder / "params.pkl"
-    number_pl, *_ = pickle.load(open(ds_params_path, "rb"))
+    ds_folder_path = project_root / "dataset" / dataset_folder
+    ds_params_path = ds_folder_path / "params.pkl"
+    number_pl, min_depth, max_depth, corpus_size, prop_td, n_worlds = pickle.load(open(ds_params_path, "rb"))
 
     vocab, tok_to_id = build_vocab(number_pl, cls_model, tokenization)
 
@@ -84,7 +106,18 @@ def main():
             f"tokenization={tokenization!r} - check these match how the model was trained."
         )
 
-    letters = list(string.ascii_lowercase)[:number_pl]
+    all_letters = list(string.ascii_lowercase)[:number_pl]
+    if args.all_letters:
+        letters = all_letters
+    else:
+        act_world = pickle.load(open(ds_folder_path / "act_world.pkl", "rb"))
+        alt_worlds = pickle.load(open(ds_folder_path / "alt_worlds.pkl", "rb"))
+        seen = letters_used_in_corpus(ds_folder_path, number_pl, max_depth, act_world, alt_worlds, all_letters)
+        letters = [l for l in all_letters if l in seen]
+        print(f"{len(letters)}/{len(all_letters)} letters actually appear in "
+              f"{dataset_folder}'s train/dev_t/dev_f corpus - only plotting those "
+              f"(pass --all_letters to plot every letter regardless)")
+
     letter_of = valid_bigrams(letters, tokenization)
 
     tokens, tok_labels, rows = [], [], []
