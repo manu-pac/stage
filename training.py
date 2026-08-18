@@ -1,6 +1,5 @@
 import pickle
 from pathlib import Path
-import tf_generation as tfg
 import argparse
 import string
 import torch
@@ -138,6 +137,8 @@ def eval_loss(dataloader):
 def main():
     print("starting")
     parser = argparse.ArgumentParser()
+    parser.add_argument("--logic", choices=["pl","fol"], default="pl",
+                    help="choose logic: pl or fol")
     parser.add_argument("--dataset_folder", type=str, required=True, help="name of the folder where the dataset that'll be used for training is stored")
     parser.add_argument("--cls", action="store_true", help="add [CLS] on tokenization")
     parser.add_argument("--batch_size", type=int, default=128)
@@ -157,7 +158,7 @@ def main():
 
     global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id, tokenization
 
-    folder =  Path(__file__).resolve().parent / "dataset" / args.dataset_folder
+    folder = Path(__file__).resolve().parent / "dataset" / args.dataset_folder
 
     cls = args.cls
     tokenization = args.tokenization
@@ -167,20 +168,66 @@ def main():
     heads = args.heads
     layers = args.layers
 
+    # Import the right generator module based on logic
+    logic = args.logic
+    if logic == 'pl':
+        import tf_generation as tfg
+    else:
+        import tf_generation_fol as tfg
+        from classes import P   # needed to rebuild predicate objects
+
     # load the parameters the corpus was generated with
     act_world = pickle.load(open(folder / "act_world.pkl", "rb"))
     alt_worlds = pickle.load(open(folder / "alt_worlds.pkl", "rb"))
-    number_pl, min_depth, max_depth, corpus_size, prop_td, n_worlds = pickle.load(open(folder / "params.pkl", "rb"))
-    tfg.setup(number_pl_=number_pl, max_depth_=max_depth, act_world_=act_world, alt_worlds_=alt_worlds)
-    
+    params = pickle.load(open(folder / "params.pkl", "rb"))
+
+    # Handle parameter loading for PL vs FOL
+    if logic == 'pl':
+        number_pl, min_depth, max_depth, corpus_size, prop_td, n_worlds = params
+        # PL setup
+        tfg.setup(number_pl_=number_pl, max_depth_=max_depth, 
+                  act_world_=act_world, alt_worlds_=alt_worlds)
+        # Build alphabet for PL
+        letters = list(string.ascii_lowercase)[:number_pl]
+        symbols = ["∧", "¬", "(", ")"]
+    else:
+        # FOL: params is a dictionary
+        domain = params['domain']
+        variables = params['variables']
+        predicates_info = params['predicates']   # list of (name, arity)
+        min_arity = params['min_arity']
+        max_arity = params['max_arity']
+        min_depth = params['min_depth']
+        max_depth = params['max_depth']
+        corpus_size = params['corpus_size']
+        n_worlds = params['n_worlds']
+        number_pr = params['number_pr']
+        number_vr = params['number_vr']
+        
+        # Rebuild P objects (required for setup)
+        predicates = [P(name, arity) for name, arity in predicates_info]
+        
+        # FOL setup
+        tfg.setup(domain_=domain, variables_=variables, predicates_=predicates,
+                  min_arity_=min_arity, max_arity_=max_arity,
+                  min_depth_=min_depth, max_depth_=max_depth,
+                  act_world_=act_world, alt_worlds_=alt_worlds)
+        
+        # Build alphabet for FOL
+        pred_letters = list(string.ascii_uppercase[:number_pr])
+        var_letters = list(string.ascii_lowercase[:number_vr])
+        symbols = ["∀", "∃", "∧", "¬", "(", ")", ","]   # comma appears in PredApp
+        letters = pred_letters + var_letters
+        
+        # We don't need number_pl for FOL, but keep it as None for compatibility
+        number_pl = None
+
     # load the actual corpus
     idx_t = pickle.load(open(folder / "train.pkl", "rb"))
     dev_t = pickle.load(open(folder / "dev_t.pkl", "rb"))
     dev_f = pickle.load(open(folder / "dev_f.pkl", "rb"))
 
-    # build pieces for tokenization
-    letters = list(string.ascii_lowercase)[:number_pl]
-    symbols = ["∧", "¬", "(", ")"]
+    # build pieces for tokenization (using the appropriate alphabet)
     alphabet = symbols + letters
     if tokenization == "bigram":
         vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]"] + [c1+c2 for c1 in alphabet for c2 in alphabet]
@@ -189,18 +236,32 @@ def main():
                 [c1+c2 for c1 in alphabet for c2 in alphabet] + \
                 [c + BIGRAM2_FILLER for c in alphabet]  # padded tokens for odd trailing chars
     else:
-        vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"] + letters
+        # For char-level tokenization, use the appropriate symbols
+        if logic == 'pl':
+            vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"] + letters
+        else:
+            vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∀","∃","∧","¬","(",")",","] + letters
+    
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
-    max_len = max(max(seq_len(str(tfg.true_le(i))) for i in idx_t),
-              max(seq_len(str(tfg.true_le(i))) for i in dev_t),
-              max(seq_len(str(tfg.false_le(i))) for i in dev_f))
+    
+    # Compute max_len (for FOL we need to handle the string conversion appropriately)
+    if logic == 'pl':
+        max_len = max(max(seq_len(str(tfg.true_le(i))) for i in idx_t),
+                  max(seq_len(str(tfg.true_le(i))) for i in dev_t),
+                  max(seq_len(str(tfg.false_le(i))) for i in dev_f))
+    else:
+        # For FOL, true_le and false_le are aliases to form_le
+        max_len = max(max(seq_len(str(tfg.true_le(i))) for i in idx_t),
+                  max(seq_len(str(tfg.true_le(i))) for i in dev_t),
+                  max(seq_len(str(tfg.false_le(i))) for i in dev_f))
+    
     if cls:
         max_len += 1
     vocab_size = len(vocab)
     pad_id = tok_to_id["[PAD]"]
     mask_id = tok_to_id["[MASK]"]
 
-    # create model, optimier and loss function
+    # create model, optimizer and loss function
     global model, optimizer, loss_fn, dataloader, device, dataset, dev_dataset, dev_dataloader
     model = EncoderTransformer()
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3)
@@ -208,7 +269,7 @@ def main():
 
     dataset = FormulaDataset(idx_t, max_len)
 
-    #training
+    # training
     if args.r_bias:
         probs = pickle.load(open(folder / "probs.pkl", "rb"))
         probs_t = torch.tensor(probs, dtype=torch.float) ** args.bias_power
@@ -253,6 +314,8 @@ def main():
         suffix += "_bigram"
     elif tokenization == "bigram2":
         suffix += "_bigram2"
+    # Add logic to suffix
+    suffix += f"_{logic}"
 
     out_dir = (project_root/ "model"/ f"{args.batch_size}bs_{args.epochs}e_{args.hidden}hl_{args.heads}h_{args.layers}l{suffix}_seed{args.seed}_{args.dataset_folder}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -263,7 +326,7 @@ def main():
     bad_epochs = 0
 
     seen = set()
-    total_seen=0
+    total_seen = 0
 
     for epoch in range(epochs):
         total_loss = 0.0
@@ -306,10 +369,11 @@ def main():
 
     p_out = out_dir / "params.pkl"
     with open(p_out, "wb") as f:
-          pickle.dump((args.dataset_folder, cls, batch_size, epochs, hidden, heads, layers,args.r_bias, tokenization),f)
+        pickle.dump((args.dataset_folder, cls, batch_size, epochs, hidden, heads, layers, args.r_bias, tokenization, logic), f)
 
     with open(out_dir / "vocab.pkl", "wb") as f:
         pickle.dump(vocab, f)
+        
     # plot losses
     epochs_plot = [h[0]+1 for h in history]
     train_losses = [h[1] for h in history]
