@@ -216,7 +216,7 @@ def main():
         # Build alphabet for FOL
         pred_letters = list(string.ascii_uppercase[:number_pr])
         var_letters = list(string.ascii_lowercase[:number_vr])
-        symbols = ["∀", "∃", "∧", "¬", "(", ")", ","]   # comma appears in PredApp
+        symbols = ["∃", "∧", "¬", "(", ")", ","]
         letters = pred_letters + var_letters
         
         # We don't need number_pl for FOL, but keep it as None for compatibility
