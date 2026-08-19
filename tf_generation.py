@@ -244,6 +244,9 @@ def main():
 
     probs = [prob(x) for x in idx_t]
 
+    prob_av = sum(probs)/len(probs)
+    print(prob_av)
+
     project_root = Path(__file__).resolve().parent
     out_dir = project_root/"dataset"/args.folder_name
     out_dir.mkdir(parents=True, exist_ok=True)

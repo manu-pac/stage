@@ -156,7 +156,7 @@ def main():
     torch.manual_seed(args.seed)
     random.seed(args.seed)
 
-    global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id, tokenization
+    global hidden, heads, layers, idx_t, dev_t, number_pl, cls, max_len, vocab, letters, tok_to_id, vocab_size, pad_id, mask_id, tokenization, tfg
 
     folder = Path(__file__).resolve().parent / "dataset" / args.dataset_folder
 
@@ -174,7 +174,7 @@ def main():
         import tf_generation as tfg
     else:
         import tf_generation_fol as tfg
-        from classes import P   # needed to rebuild predicate objects
+        from classes_fol import P   # needed to rebuild predicate objects
 
     # load the parameters the corpus was generated with
     act_world = pickle.load(open(folder / "act_world.pkl", "rb"))
