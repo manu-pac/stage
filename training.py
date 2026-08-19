@@ -240,7 +240,7 @@ def main():
         if logic == 'pl':
             vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∧","¬","(",")"] + letters
         else:
-            vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∀","∃","∧","¬","(",")",","] + letters
+            vocab = (["[CLS]"] if cls else []) + ["[PAD]","[MASK]","∃","∧","¬","(",")",","] + letters
     
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
     
