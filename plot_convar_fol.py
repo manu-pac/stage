@@ -79,22 +79,28 @@ def setup_tfg(r_folder, r_params, active_world, alt_worlds):
               act_world_=active_world, alt_worlds_=alt_worlds)
 
 
-def extract_records(model, dataloader, positions_by_idx, cls_model, vocab, device, form_le=None):
+def extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vocab, device, form_le=None):
     """
     Returns a list of dicts: {"idx": int, "var": str, "value": int, "vector": np.ndarray}
     one entry per unique-witness-variable occurrence across the dataset.
+
+    NOTE: FormulaDataset.__getitem__ (in training.py) returns the *position* within
+    idx_list as its third element, not the actual formula index (self.idx_list[idx]).
+    So batch_idx here is a position, which we map back through idx_list to get the
+    real formula index used as the key into positions_by_idx.
     """
     records = []
     cls_offset = 1 if cls_model else 0
 
     with torch.no_grad():
-        for batch_input_ids, batch_attention_mask, batch_idx in dataloader:
+        for batch_input_ids, batch_attention_mask, batch_positions in dataloader:
             batch_input_ids = batch_input_ids.to(device)
             batch_attention_mask = batch_attention_mask.to(device)
 
             hidden_states, _ = model(batch_input_ids, batch_attention_mask)  # (B, T, H)
 
-            for i, idx in enumerate(batch_idx.tolist()):
+            for i, position in enumerate(batch_positions.tolist()):
+                idx = idx_list[position]  # actual formula index
                 unique_vars = positions_by_idx[idx]  # {var_str: {"value":, "position":}}
                 for var_name, info in unique_vars.items():
                     token_idx = info["position"] + cls_offset
@@ -173,7 +179,7 @@ def main():
     dataloader = DataLoader(dataset, batch_size=128, shuffle=False)
 
     from tf_generation_fol import form_le
-    records = extract_records(model, dataloader, positions_by_idx, cls_model, vocab, device, form_le=form_le)
+    records = extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vocab, device, form_le=form_le)
     print(f"Extracted {len(records)} unique-variable contextual representations "
           f"from {len(idx_list)} formulas.")
 
