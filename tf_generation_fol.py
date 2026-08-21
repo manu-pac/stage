@@ -27,8 +27,9 @@ def pred_tuples(p, domain, prop_tf=0.5):
 def form(i, d, bag):
     # bag: list of V·s that are currently "available" (already bound)
     k = len(bag) 
-    if (i, d, tuple(bag)) in cache:
-        return cache[(i, d, tuple(bag))]
+    cache_key = (i, d, tuple(bag))
+    if cache_key in cache:
+        return cache[cache_key]
 
     if d == 1: # blocks of predicates vs. variable combos (one block per arity group)
         cur_arity = 1
@@ -80,7 +81,7 @@ def form(i, d, bag):
                 row, col = divmod(j, C[d - 1][k])
                 phi = Conj(form_le(row, k, bag), form(col, d - 1, bag))
 
-    cache[(i, d, tuple(bag))] = phi
+    cache[cache_key] = phi
     return phi
 
 def form_le(i, k, bag):

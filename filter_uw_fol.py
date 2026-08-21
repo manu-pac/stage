@@ -1,4 +1,3 @@
-import random
 import pickle
 from pathlib import Path
 import numpy as np
@@ -137,15 +136,11 @@ def get_unique_variable_positions(phi, model, rel_cache, domain_size, max_vars=N
 
 
 def filter_formulas_with_positions(dev_true_indices, model, form_le, target_count=1500,
-                                    max_vars=None, seed=None, report_every=500):
-    if seed is not None:
-        random.seed(seed)
-
+                                   max_vars=None, report_every=500):
     pool = list(dev_true_indices)
-    random.shuffle(pool)
 
     rel_cache, domain_size = _build_relation_cache(model)
-    grid_cache = {}  # np.ix_ grids depend only on (n, domain_size) -> reusable across formulas
+    grid_cache = {}
 
     filtered = []
     tried = 0
@@ -153,7 +148,7 @@ def filter_formulas_with_positions(dev_true_indices, model, form_le, target_coun
         tried += 1
         phi = form_le(idx, 0, [])
         result = get_unique_variable_positions(phi, model, rel_cache, domain_size,
-                                                 max_vars=max_vars, grid_cache=grid_cache)
+                                               max_vars=max_vars, grid_cache=grid_cache)
         if result is not None:
             filtered.append((idx, result))
             if len(filtered) >= target_count:
@@ -206,13 +201,10 @@ def main():
     with open(data_dir / "dev_t.pkl", "rb") as f:
         dev_true_indices = pickle.load(f)
 
-    # We need to (re)set the global tables (C, S, cache) for form_le to work.
-    # The setup function from tf_generation_fol does that.
-    # We'll call it with the saved parameters.
     setup(domain, variables, predicates,
           params['min_arity'], params['max_arity'],
           params['min_depth'], params['max_depth'],
-          act_world, [])  # alt_worlds not needed here, but pass empty list
+          act_world, [])
 
     filtered_dev = filter_formulas_with_positions(dev_true_indices, model, form_le, target_count=target_count)
 

@@ -21,20 +21,13 @@ def load_model_and_vocab(project_root, model_name, epoch, device):
     (t_folder_name, cls_model, bs, e, hidden, heads, layers, rb,
      tokenization, logic) = pickle.load(open(model_folder / "params.pkl", "rb"))
 
-    if logic == "pl":
-        raise ValueError("unique-witness-variable reps only make sense for FOL models, "
-                          f"but this checkpoint was trained on logic={logic!r}")
-    if tokenization != "char":
-        raise ValueError(f"this script assumes tokenization='char', got {tokenization!r}")
-
     t_folder = project_root / "dataset" / t_folder_name
     t_params = pickle.load(open(t_folder / "params.pkl", "rb"))
 
     state_dict = torch.load(checkpoint, map_location=device)
     vocab_size_ckpt, max_len = infer_arch_from_state_dict(state_dict)
 
-    # load the exact vocab saved at training time (more robust than rebuilding it,
-    # since it can't drift from whatever training.py actually used)
+    # load the exact vocab saved at training time
     vocab = pickle.load(open(model_folder / "vocab.pkl", "rb"))
     tok_to_id = {tok: i for i, tok in enumerate(vocab)}
     letters = [t for t in vocab if t not in
@@ -43,6 +36,8 @@ def load_model_and_vocab(project_root, model_name, epoch, device):
         raise ValueError(
             f"Saved vocab size ({len(vocab)}) doesn't match checkpoint vocab size ({vocab_size_ckpt})."
         )
+
+    print(vocab,tok_to_id)
 
     tr.hidden = hidden
     tr.heads = heads
@@ -80,15 +75,6 @@ def setup_tfg(r_folder, r_params, active_world, alt_worlds):
 
 
 def extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vocab, device, form_le=None):
-    """
-    Returns a list of dicts: {"idx": int, "var": str, "value": int, "vector": np.ndarray}
-    one entry per unique-witness-variable occurrence across the dataset.
-
-    NOTE: FormulaDataset.__getitem__ (in training.py) returns the *position* within
-    idx_list as its third element, not the actual formula index (self.idx_list[idx]).
-    So batch_idx here is a position, which we map back through idx_list to get the
-    real formula index used as the key into positions_by_idx.
-    """
     records = []
     cls_offset = 1 if cls_model else 0
 
@@ -100,14 +86,18 @@ def extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vo
             hidden_states, _ = model(batch_input_ids, batch_attention_mask)  # (B, T, H)
 
             for i, position in enumerate(batch_positions.tolist()):
-                idx = idx_list[position]  # actual formula index
                 unique_vars = positions_by_idx[idx]  # {var_str: {"value":, "position":}}
                 for var_name, info in unique_vars.items():
                     token_idx = info["position"] + cls_offset
                     val = info["value"]
+                    print(var_name, info)
+                    print(idx)
+                    print(form_le(idx, 0, []))
 
                     tok_id = batch_input_ids[i, token_idx].item()
                     actual_char = vocab[tok_id]
+
+                    print(batch_input_ids[i, token_idx].item())
                     if actual_char != var_name:
                         debug_str = f" formula={form_le(idx, 0, [])}" if form_le else ""
                         raise AssertionError(
@@ -177,6 +167,8 @@ def main():
     # dev_data.pkl comes from filtering dev_true_indices, so these are all "true" formulas
     dataset = tr.FormulaDataset(idx_list, max_len, t=True)
     dataloader = DataLoader(dataset, batch_size=128, shuffle=False)
+
+    print("ok so far")
 
     from tf_generation_fol import form_le
     records = extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vocab, device, form_le=form_le)
