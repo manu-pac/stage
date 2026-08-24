@@ -103,6 +103,10 @@ def main():
         for var in v_objs:
             s_dict[i][var]=i
 
+    # Precompute VarAssignment objects once — s_dict never changes per idx/variant,
+    # so there's no reason to rebuild these on every inner-loop iteration.
+    f_assignments = {i: VarAssignment(s_dict[i]) for i in domain}
+
     filtered_dev = []
 
     while len(filtered_dev) < target_count:
@@ -111,13 +115,13 @@ def main():
             variants, full_str, binder_indices = remove_one_ex_tagged(f)
             binder_lookup = dict(binder_indices)
 
-            unique_witness_results = []  # list of (var_name, char_idx, witness)
+            unique_witness_results = []
 
             for variant, removed_node in variants:
                 true_count = 0
                 witness = None
                 for i in domain:
-                    if variant.check(model, VarAssignment(s_dict[i])):
+                    if variant.check(model, f_assignments[i]):
                         true_count += 1
                         witness = i
                         if true_count > 1:
@@ -125,7 +129,7 @@ def main():
 
                 if true_count == 1:
                     char_idx = binder_lookup[removed_node]
-                    unique_witness_results.append((char_idx, witness)) #MUDAR AQUI SE QUISER LETRA
+                    unique_witness_results.append((char_idx, witness))
 
             if unique_witness_results:
                 filtered_dev.append((idx, unique_witness_results))
