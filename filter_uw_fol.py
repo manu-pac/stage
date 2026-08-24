@@ -129,9 +129,7 @@ def main():
 
             if unique_witness_results:
                 filtered_dev.append((idx, unique_witness_results))
-                print(filtered_dev[-1])
-                print(f.__str__()[unique_witness_results[0][0]])
-                print(f.__str__())
+                print(len(filtered_dev))
                 if len(filtered_dev) >= target_count:
                     break
     
