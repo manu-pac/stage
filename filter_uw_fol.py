@@ -103,8 +103,7 @@ def main():
         for var in v_objs:
             s_dict[i][var]=i
 
-    # Precompute VarAssignment objects once — s_dict never changes per idx/variant,
-    # so there's no reason to rebuild these on every inner-loop iteration.
+    #precompute VarAssignment objects once (s_dict never changes per idx/variant, so  dont rebuild these on every inner loop iteration)
     f_assignments = {i: VarAssignment(s_dict[i]) for i in domain}
 
     filtered_dev = []
