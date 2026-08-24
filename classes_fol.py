@@ -258,7 +258,7 @@ class Neg(Formula):
 
   # Returns a string representation of the object. Used to print the object in a readable way
   def __str__(self):
-      return f'(¬{self._phi})'
+    return f'(¬{self._phi})'
 
 class Ex(Formula):
   def __init__(self,v,phi):

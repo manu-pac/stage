@@ -1,170 +1,53 @@
 import pickle
 from pathlib import Path
 import numpy as np
-from classes_fol import PredApp, Neg, Ex, Conj, V, P, InterpretationFunc, Model
+from classes_fol import PredApp, Neg, Ex, Conj, V, P, InterpretationFunc, Model, VarAssignment
 from tf_generation_fol import form_le, setup
 import argparse
 
-def get_variables(phi):
-    if isinstance(phi, PredApp):
-        return set(phi._args)
-    if isinstance(phi, Neg):
-        return get_variables(phi._phi)
-    if isinstance(phi, Conj):
-        return get_variables(phi._phi) | get_variables(phi._psi)
-    if isinstance(phi, Ex):
-        return {phi._v} | get_variables(phi._phi)
-    raise TypeError(f"Unknown type: {type(phi)}")
+def remove_one_ex_tagged(formula):
+    if isinstance(formula, PredApp):
+        return [], str(formula), []
 
+    elif isinstance(formula, Neg):
+        sub_variants, sub_str, sub_binders = remove_one_ex_tagged(formula._phi)
+        prefix = '(¬'
+        offset = len(prefix)
+        s = prefix + sub_str + ')'
+        variants = [(Neg(v), removed) for v, removed in sub_variants]
+        binders = [(node, idx + offset) for node, idx in sub_binders]
+        return variants, s, binders
 
-def get_matrix(phi):
-    if isinstance(phi, PredApp):
-        return phi
-    if isinstance(phi, Neg):
-        return Neg(get_matrix(phi._phi))
-    if isinstance(phi, Conj):
-        return Conj(get_matrix(phi._phi), get_matrix(phi._psi))
-    if isinstance(phi, Ex):
-        return get_matrix(phi._phi)
-    raise TypeError(f"Unknown type: {type(phi)}")
+    elif isinstance(formula, Ex):
+        sub_variants, sub_str, sub_binders = remove_one_ex_tagged(formula._phi)
+        prefix = f'(∃{formula._v}'
+        offset = len(prefix)
+        bound_idx = offset - len(str(formula._v))
+        s = prefix + sub_str + ')'
 
+        variants = [(formula._phi, formula)]  # option 1: remove this quantifier
+        variants += [(Ex(formula._v, sub), removed) for sub, removed in sub_variants]  # option 2: recurse
 
-def _build_relation_cache(model):
-    domain_size = len(model.domain)
+        binders = [(formula, bound_idx)] + [(node, idx + offset) for node, idx in sub_binders]
+        return variants, s, binders
 
-    cache = {}
-    for pred, tuples in model.i_func._p_dic.items():
-        rel = np.zeros((domain_size,) * pred.arity, dtype=bool)
-        for tup in tuples:
-            rel[tup] = True
-        cache[pred] = rel
+    elif isinstance(formula, Conj):
+        left_variants, left_str, left_binders = remove_one_ex_tagged(formula._phi)
+        right_variants, right_str, right_binders = remove_one_ex_tagged(formula._psi)
 
-    return cache, domain_size
+        left_offset = 1  # '('
+        right_offset = left_offset + len(left_str) + 1  # + '∧'
+        s = f'({left_str}∧{right_str})'
 
-def _binder_positions(phi):
-    positions = {}
-    parts = []
-    pos = 0
+        variants = [(Conj(lv, formula._psi), removed) for lv, removed in left_variants]
+        variants += [(Conj(formula._phi, rv), removed) for rv, removed in right_variants]
 
-    def emit(s):
-        nonlocal pos
-        parts.append(s)
-        pos += len(s)
+        binders = [(node, idx + left_offset) for node, idx in left_binders]
+        binders += [(node, idx + right_offset) for node, idx in right_binders]
+        return variants, s, binders
 
-    def walk(node):
-        if isinstance(node, PredApp):
-            emit(str(node))
-        elif isinstance(node, Neg):
-            emit("(¬")
-            walk(node._phi)
-            emit(")")
-        elif isinstance(node, Ex):
-            emit("(∃")
-            positions[node._v] = pos
-            emit(str(node._v))
-            walk(node._phi)
-            emit(")")
-        elif isinstance(node, Conj):
-            emit("(")
-            walk(node._phi)
-            emit("∧")
-            walk(node._psi)
-            emit(")")
-        else:
-            raise TypeError(f"Unknown type: {type(node)}")
-
-    walk(phi)
-    assert "".join(parts) == str(phi), "_binder_positions drifted from __str__ -- check class formatting"
-    return positions
-
-
-def compute_unique_mapping_fast(phi, model, rel_cache, domain_size, max_vars=None, grid_cache=None):
-    matrix = get_matrix(phi)
-    vars_list = list(get_variables(matrix))
-    n = len(vars_list)
-
-    if not vars_list:
-        return {} if matrix.check_closed(model) else None
-    if max_vars is not None and n > max_vars:
-        return None
-
-    var_to_axis = {v: i for i, v in enumerate(vars_list)}
-    shape = (domain_size,) * n
-
-    if grid_cache is not None and n in grid_cache:
-        grids = grid_cache[n]
     else:
-        grids = np.ix_(*([range(domain_size)] * n))
-        if grid_cache is not None:
-            grid_cache[n] = grids
-
-    def get_relation(pred):
-        return rel_cache.setdefault(pred, np.zeros((domain_size,) * pred.arity, dtype=bool))
-
-    def eval_node(node):
-        if isinstance(node, PredApp):
-            idx = tuple(grids[var_to_axis[arg]] for arg in node._args)
-            return get_relation(node._pred)[idx]
-        if isinstance(node, Neg):
-            return ~eval_node(node._phi)
-        if isinstance(node, Conj):
-            return eval_node(node._phi) & eval_node(node._psi)
-        raise TypeError(f"Unexpected node: {type(node)}")
-
-    mask = np.broadcast_to(eval_node(matrix), shape)
-    if not mask.any():
-        return None
-
-    unique_map = {}
-    for var, axis in var_to_axis.items():
-        other_axes = tuple(a for a in range(n) if a != axis)
-        appears = np.any(mask, axis=other_axes)
-        idxs = np.flatnonzero(appears)
-        if idxs.size == 1:
-            unique_map[var] = int(idxs[0])
-
-    return unique_map
-
-
-def get_unique_variable_positions(phi, model, rel_cache, domain_size, max_vars=None, grid_cache=None):
-    um = compute_unique_mapping_fast(phi, model, rel_cache, domain_size, max_vars=max_vars, grid_cache=grid_cache)
-    if not um:
-        return None
-
-    positions = _binder_positions(phi)
-    return {"unique_vars": {str(v): {"value": val, "position": positions[v]} for v, val in um.items()}}
-
-
-def filter_formulas_with_positions(dev_true_indices, model, form_le, target_count=1500,
-                                   max_vars=None, report_every=500):
-    pool = list(dev_true_indices)
-
-    rel_cache, domain_size = _build_relation_cache(model)
-    grid_cache = {}
-
-    filtered = []
-    tried = 0
-    for idx in pool:
-        tried += 1
-        phi = form_le(idx, 0, [])
-        result = get_unique_variable_positions(phi, model, rel_cache, domain_size,
-                                               max_vars=max_vars, grid_cache=grid_cache)
-        if result is not None:
-            filtered.append((idx, result))
-            if len(filtered) >= target_count:
-                break
-
-        if report_every and tried % report_every == 0:
-            print(f"tried {tried}, kept {len(filtered)}")
-
-    if len(filtered) < target_count:
-        print(f"WARNING: pool exhausted ({len(pool)} formulas) before reaching target_count={target_count}; "
-              f"kept {len(filtered)}.")
-    else:
-        print(f"Kept {len(filtered)} formulas after trying {tried}/{len(pool)}")
-
-    return filtered
-
+        raise TypeError(f"Unhandled formula type: {type(formula)}")
 
 def main():
     print("starting")
@@ -186,6 +69,8 @@ def main():
     variables = params['variables']
     predicates_info = params['predicates']
 
+    v_objs = [V(i) for i in params['variables']]
+
     # Reconstruct predicate objects
     predicates = [P(name, arity) for name, arity in predicates_info]
 
@@ -206,8 +91,50 @@ def main():
           params['min_depth'], params['max_depth'],
           act_world, [])
 
-    filtered_dev = filter_formulas_with_positions(dev_true_indices, model, form_le, target_count=target_count)
+    print("variables from params:", variables)
+    
+    global s_dict
 
+    #dict of dicts: every variable assignment
+    s_dict = {}
+
+    for i in domain:
+        s_dict[i] = {}
+        for var in v_objs:
+            s_dict[i][var]=i
+
+    filtered_dev = []
+
+    while len(filtered_dev) < target_count:
+        for idx in dev_true_indices:
+            f = form_le(idx, 0, [])
+            variants, full_str, binder_indices = remove_one_ex_tagged(f)
+            binder_lookup = dict(binder_indices)
+
+            unique_witness_results = []  # list of (var_name, char_idx, witness)
+
+            for variant, removed_node in variants:
+                true_count = 0
+                witness = None
+                for i in domain:
+                    if variant.check(model, VarAssignment(s_dict[i])):
+                        true_count += 1
+                        witness = i
+                        if true_count > 1:
+                            break
+
+                if true_count == 1:
+                    char_idx = binder_lookup[removed_node]
+                    unique_witness_results.append((char_idx, witness)) #MUDAR AQUI SE QUISER LETRA
+
+            if unique_witness_results:
+                filtered_dev.append((idx, unique_witness_results))
+                print(filtered_dev[-1])
+                print(f.__str__()[unique_witness_results[0][0]])
+                print(f.__str__())
+                if len(filtered_dev) >= target_count:
+                    break
+    
     # save filtered data
     with open(data_dir / "dev_data.pkl", "wb") as f:
         pickle.dump(filtered_dev, f)

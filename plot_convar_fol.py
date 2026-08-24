@@ -12,6 +12,8 @@ import training as tr
 import tf_generation_fol as tfg
 from classes_fol import P
 from reps import infer_arch_from_state_dict
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.patches import Patch
 
 
 def load_model_and_vocab(project_root, model_name, epoch, device):
@@ -77,6 +79,7 @@ def setup_tfg(r_folder, r_params, active_world, alt_worlds):
 def extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vocab, device, form_le=None):
     records = []
     cls_offset = 1 if cls_model else 0
+    global_i = 0
 
     with torch.no_grad():
         for batch_input_ids, batch_attention_mask, batch_positions in dataloader:
@@ -84,37 +87,38 @@ def extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vo
             batch_attention_mask = batch_attention_mask.to(device)
 
             hidden_states, _ = model(batch_input_ids, batch_attention_mask)  # (B, T, H)
+            batch_size = batch_input_ids.shape[0]
 
-            for i, position in enumerate(batch_positions.tolist()):
-                unique_vars = positions_by_idx[idx]  # {var_str: {"value":, "position":}}
-                for var_name, info in unique_vars.items():
-                    token_idx = info["position"] + cls_offset
-                    val = info["value"]
-                    print(var_name, info)
-                    print(idx)
-                    print(form_le(idx, 0, []))
+            for i in range(batch_size):
+                idx = idx_list[global_i + i]
+                results = positions_by_idx[idx]  # list of (char_idx, witness)
+
+                formula_str = form_le(idx, 0, []).__str__() if form_le else None
+
+                for char_idx, val in results:
+                    var_name = formula_str[char_idx] if formula_str is not None else None
+                    token_idx = char_idx + cls_offset
 
                     tok_id = batch_input_ids[i, token_idx].item()
                     actual_char = vocab[tok_id]
 
-                    print(batch_input_ids[i, token_idx].item())
-                    if actual_char != var_name:
-                        debug_str = f" formula={form_le(idx, 0, [])}" if form_le else ""
+                    if var_name is not None and actual_char != var_name:
                         raise AssertionError(
                             f"Token alignment mismatch for idx={idx}, var={var_name!r}: "
                             f"expected char {var_name!r} at token_idx={token_idx} "
-                            f"(position={info['position']}, cls_offset={cls_offset}), "
-                            f"but found token decodes to {actual_char!r}.{debug_str}\n"
+                            f"(position={char_idx}, cls_offset={cls_offset}), "
+                            f"but found token decodes to {actual_char!r}.\n"
                             f"This means the char-position -> token-index assumption doesn't "
                             f"hold for this model's encode(); inspect training.py's encode() "
                             f"for the 'char' branch and fix the offset logic above."
                         )
 
                     vec = hidden_states[i, token_idx, :].detach().cpu().numpy()
-                    records.append({"idx": idx, "var": var_name, "value": val, "vector": vec})
+                    records.append({"idx": idx, "var": actual_char, "value": val, "vector": vec})
+
+            global_i += batch_size
 
     return records
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -159,16 +163,14 @@ def main():
             f"to produce the filtered dev_data.pkl."
         )
     with open(dev_data_path, "rb") as f:
-        dev_data = pickle.load(f)  # list of (idx, {"unique_vars": {...}})
+        dev_data = pickle.load(f)  # list of (idx, [(char_idx, witness), ...])
 
     idx_list = [idx for idx, _ in dev_data]
-    positions_by_idx = {idx: result["unique_vars"] for idx, result in dev_data}
+    positions_by_idx = {idx: results for idx, results in dev_data}
 
     # dev_data.pkl comes from filtering dev_true_indices, so these are all "true" formulas
     dataset = tr.FormulaDataset(idx_list, max_len, t=True)
     dataloader = DataLoader(dataset, batch_size=128, shuffle=False)
-
-    print("ok so far")
 
     from tf_generation_fol import form_le
     records = extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vocab, device, form_le=form_le)
@@ -182,19 +184,40 @@ def main():
     embedding = tsne.fit_transform(vectors)
 
     if args.color_by == "value":
-        labels = [r["value"] for r in records]
-        cmap = "viridis"
+        raw_labels = [r["value"] for r in records]
     else:
-        labels = [r["var"] for r in records]
-        unique_labels = sorted(set(labels))
-        label_to_int = {lab: i for i, lab in enumerate(unique_labels)}
-        labels = [label_to_int[l] for l in labels]
-        cmap = "tab10"
+        raw_labels = [r["var"] for r in records]
+
+    # map unique labels to integer indices
+    unique_labels = sorted(set(raw_labels))  # sorted ensures consistent order
+    label_to_int = {lab: i for i, lab in enumerate(unique_labels)}
+    int_labels = [label_to_int[lab] for lab in raw_labels]
+    n_unique = len(unique_labels)
+
+    # choose a discrete colormap with n_unique distinct colours
+    if n_unique <= 20:
+        cmap = plt.get_cmap('tab20')
+        # tab20 has exactly 20 colours; for fewer we still use it (indices 0..n-1)
+    else:
+        # generate a custom ListedColormap from a continuous map (e.g., 'turbo')
+        base_cmap = plt.get_cmap('turbo')
+        colors = [base_cmap(i / n_unique) for i in range(n_unique)]
+        cmap = ListedColormap(colors)
+
+    # use BoundaryNorm to avoid interpolation between integer bins
+    bounds = np.arange(-0.5, n_unique + 0.5, 1)
+    norm = BoundaryNorm(bounds, n_unique)
 
     fig, ax = plt.subplots(figsize=(8, 8))
-    scatter = ax.scatter(embedding[:, 0], embedding[:, 1], c=labels, cmap=cmap, s=12, alpha=0.8)
-    legend = ax.legend(*scatter.legend_elements(), title=args.color_by, loc="best", fontsize=8)
-    ax.add_artist(legend)
+    scatter = ax.scatter(embedding[:, 0], embedding[:, 1],
+                         c=int_labels, cmap=cmap, norm=norm,
+                         s=12, alpha=0.8)
+
+    # build legend with the actual label strings
+    legend_labels = [str(v) for v in unique_labels]
+    handles = [Patch(color=cmap(i), label=label) for i, label in enumerate(legend_labels)]
+    ax.legend(handles=handles, title=args.color_by, loc="best", fontsize=8)
+
     ax.set_title(f"t-SNE of unique-witness-variable contextual reps ({args.model}, epoch {args.epoch})")
     ax.set_xlabel("t-SNE 1")
     ax.set_ylabel("t-SNE 2")
