@@ -106,15 +106,25 @@ def main():
     #precompute VarAssignment objects once (s_dict never changes per idx/variant, so  dont rebuild these on every inner loop iteration)
     f_assignments = {i: VarAssignment(s_dict[i]) for i in domain}
 
-    seen_idx = set()
+    import time
+
+    print("len(dev_true_indices):", len(dev_true_indices))
+    print("len(set(dev_true_indices)):", len(set(dev_true_indices)))  # check for dupes in the source itself
+
     filtered_dev = []
+    seen_idx_this_pass = set()
+    total_processed = 0
+    n_passes = 0
+    t0 = time.time()
 
     while len(filtered_dev) < target_count:
+        n_passes += 1
         added_this_pass = 0
+        pass_seen = set()
+
         for idx in dev_true_indices:
-            if idx in seen_idx:
-                continue  # don't reprocess/duplicate a formula already kept
-            seen_idx.add(idx)
+            pass_seen.add(idx)
+            total_processed += 1
 
             f = form_le(idx, 0, [])
             variants, full_str, binder_indices = remove_one_ex_tagged(f)
@@ -125,7 +135,7 @@ def main():
                 true_count = 0
                 witness = None
                 for i in domain:
-                    if variant.check(model, f_assignments[i]):
+                    if variant.check(model, VarAssignment(s_dict[i])):
                         true_count += 1
                         witness = i
                         if true_count > 1:
@@ -140,10 +150,16 @@ def main():
                 if len(filtered_dev) >= target_count:
                     break
 
+        print(f"pass {n_passes}: distinct idx seen this pass = {len(pass_seen)}, "
+            f"added this pass = {added_this_pass}, total_processed so far = {total_processed}, "
+            f"filtered_dev so far = {len(filtered_dev)}, elapsed = {time.time()-t0:.1f}s")
+
         if added_this_pass == 0:
-            print(f"Warning: exhausted dev_true_indices, only found {len(filtered_dev)} "
-                f"formulas with a unique witness (target was {target_count}). Stopping.")
+            print("No new formulas found this pass — stopping to avoid infinite loop.")
             break
+
+    print(f"TOTAL: {total_processed} idx processed across {n_passes} pass(es), "
+        f"{len(filtered_dev)} kept, {time.time()-t0:.1f}s elapsed")
     
     # save filtered data
     with open(data_dir / "dev_data.pkl", "wb") as f:
