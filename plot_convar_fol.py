@@ -179,6 +179,15 @@ def main():
 
     vectors = np.stack([r["vector"] for r in records], axis=0)
 
+    print(f"Extracted {len(records)} unique-variable contextual representations "
+      f"from {len(idx_list)} formulas.")
+
+    n_unique_idx = len(set(idx_list))
+    print(f"Unique formula indices among those {len(idx_list)}: {n_unique_idx}")
+
+    n_unique_vecs = len({tuple(np.round(r["vector"], 4)) for r in records})
+    print(f"Unique (rounded) vectors among {len(records)} records: {n_unique_vecs}")
+
     tsne = TSNE(n_components=2, perplexity=min(args.perplexity, max(5, len(records) // 4)),
                 init="pca", random_state=0)
     embedding = tsne.fit_transform(vectors)
