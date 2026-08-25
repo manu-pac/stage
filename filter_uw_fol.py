@@ -106,16 +106,21 @@ def main():
     #precompute VarAssignment objects once (s_dict never changes per idx/variant, so  dont rebuild these on every inner loop iteration)
     f_assignments = {i: VarAssignment(s_dict[i]) for i in domain}
 
+    seen_idx = set()
     filtered_dev = []
 
     while len(filtered_dev) < target_count:
+        added_this_pass = 0
         for idx in dev_true_indices:
+            if idx in seen_idx:
+                continue  # don't reprocess/duplicate a formula already kept
+            seen_idx.add(idx)
+
             f = form_le(idx, 0, [])
             variants, full_str, binder_indices = remove_one_ex_tagged(f)
             binder_lookup = dict(binder_indices)
 
             unique_witness_results = []
-
             for variant, removed_node in variants:
                 true_count = 0
                 witness = None
@@ -125,16 +130,20 @@ def main():
                         witness = i
                         if true_count > 1:
                             break
-
                 if true_count == 1:
                     char_idx = binder_lookup[removed_node]
                     unique_witness_results.append((char_idx, witness))
 
             if unique_witness_results:
                 filtered_dev.append((idx, unique_witness_results))
-                print(len(filtered_dev))
+                added_this_pass += 1
                 if len(filtered_dev) >= target_count:
                     break
+
+        if added_this_pass == 0:
+            print(f"Warning: exhausted dev_true_indices, only found {len(filtered_dev)} "
+                f"formulas with a unique witness (target was {target_count}). Stopping.")
+            break
     
     # save filtered data
     with open(data_dir / "dev_data.pkl", "wb") as f:
