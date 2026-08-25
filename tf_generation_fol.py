@@ -15,15 +15,6 @@ def pred_generator(predicates, min_arity, max_arity):
     pred_list.sort(key=lambda obj: obj.arity)
     return pred_list
 
-def pred_tuples(p, domain, prop_tf=0.5):
-    # this function randomly assigns T/F to the desired number of tuples for each predicate in p, following the desired proportion of T/F (prop_tf)
-    d = {}
-    for predicate in p:
-        all_tuples = list(itertools.product(domain, repeat=predicate.arity))
-        true_tuples = random.sample(all_tuples, int(len(all_tuples) * prop_tf))
-        d[predicate] = true_tuples
-    return d
-
 def form(i, d, bag):
     # bag: list of V·s that are currently "available" (already bound)
     k = len(bag) 
@@ -120,10 +111,6 @@ def generate_worlds(predicates, domain, n_worlds, prop_tf=0.5):
             arity = pred.arity
             total_tuples = len(domain) ** arity
             n_true = int(total_tuples * prop_tf)
-
-            # Sample n_true unique flat indices directly (no rejection sampling),
-            # then decode each into a domain-tuple. random.sample works efficiently
-            # over a `range` object without materializing it.
             sampled_indices = random.sample(range(total_tuples), n_true)
             true_tuples = frozenset(_index_to_tuple(i, domain, arity) for i in sampled_indices)
 
@@ -176,6 +163,7 @@ def main():
     parser.add_argument("--corpus_size", type=int, required=True)
     parser.add_argument("--n_worlds", type=int, required=True)
     parser.add_argument("--folder_name", type=str, required=True)
+    parser.add_argument("--prop_tf", type=float, default=0.5)
     args = parser.parse_args()
 
     global number_id, number_vr, number_pr, min_depth, max_depth, corpus_size, n_worlds, min_arity, max_arity, domain, variables, predicates, p
@@ -200,7 +188,7 @@ def main():
     n_vars = len(v)
 
     # generate all worlds (actual + alternatives)
-    worlds_list = generate_worlds(p, domain, n_worlds, prop_tf=0.5)
+    worlds_list = generate_worlds(p, domain, n_worlds, prop_tf=args.prop_tf)
     act_world = worlds_list[0]
     alt_worlds = worlds_list[1:]
 

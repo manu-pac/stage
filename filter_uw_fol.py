@@ -145,7 +145,6 @@ def main():
                     unique_witness_results.append((char_idx, witness))
 
             if unique_witness_results:
-                filtered_dev.append((idx, unique_witness_results))
                 added_this_pass += 1
                 if len(filtered_dev) >= target_count:
                     break
@@ -160,7 +159,7 @@ def main():
 
     print(f"TOTAL: {total_processed} idx processed across {n_passes} pass(es), "
         f"{len(filtered_dev)} kept, {time.time()-t0:.1f}s elapsed")
-    
+
     # save filtered data
     with open(data_dir / "dev_data.pkl", "wb") as f:
         pickle.dump(filtered_dev, f)
