@@ -142,7 +142,7 @@ def main():
                             break
                 if true_count == 1:
                     char_idx = binder_lookup[removed_node]
-                    unique_witness_results.append((char_idx-1, witness))
+                    unique_witness_results.append((char_idx, witness))
 
             if unique_witness_results:
                 filtered_dev.append((idx, unique_witness_results))
@@ -155,7 +155,7 @@ def main():
             f"filtered_dev so far = {len(filtered_dev)}, elapsed = {time.time()-t0:.1f}s")
 
         if added_this_pass == 0:
-            print("No new formulas found this pass — stopping to avoid infinite loop.")
+            print("No new formulas found this pass: stopping to avoid infinite loop.")
             break
 
     print(f"TOTAL: {total_processed} idx processed across {n_passes} pass(es), "

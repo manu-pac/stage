@@ -131,6 +131,7 @@ def main():
                          help="color t-SNE points by the domain element the variable maps to, "
                               "or by the variable name/letter")
     parser.add_argument("--perplexity", type=float, default=30.0)
+    parser.add_argument("--char", choices=["v","eq"], default="v", help="choose character to plot (existential quant. or the actual variable next to it)")
     parser.add_argument("--output", default=None, help="path to save the plot (png). "
                                                          "Defaults to <dataset_folder>_unique_var_tsne.png")
     args = parser.parse_args()
@@ -163,10 +164,11 @@ def main():
             f"to produce the filtered dev_data.pkl."
         )
     with open(dev_data_path, "rb") as f:
-        dev_data = pickle.load(f)  # list of (idx, [(char_idx, witness), ...])
+        dev_data = pickle.load(f)  # list of (idx, [(char_idx, individual), ...])
 
+    n = 0 if args.char == "v" else 1
     idx_list = [idx for idx, _ in dev_data]
-    positions_by_idx = {idx: results for idx, results in dev_data}
+    positions_by_idx = {idx: (results[0]-n, results[1]) for idx, results in dev_data}
 
     # dev_data.pkl comes from filtering dev_true_indices, so these are all "true" formulas
     dataset = tr.FormulaDataset(idx_list, max_len, t=True)
