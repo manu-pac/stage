@@ -142,7 +142,7 @@ def main():
                             break
                 if true_count == 1:
                     char_idx = binder_lookup[removed_node]
-                    unique_witness_results.append((char_idx, witness))
+                    unique_witness_results.append((char_idx-1, witness))
 
             if unique_witness_results:
                 filtered_dev.append((idx, unique_witness_results))
