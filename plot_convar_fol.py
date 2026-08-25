@@ -168,7 +168,7 @@ def main():
 
     n = 0 if args.char == "v" else 1
     idx_list = [idx for idx, _ in dev_data]
-    positions_by_idx = {idx: (results[0]-n, results[1]) for idx, results in dev_data}
+    positions_by_idx = {idx: [(item[0]-n, item[1]) for item in results] for idx, results in dev_data}
 
     # dev_data.pkl comes from filtering dev_true_indices, so these are all "true" formulas
     dataset = tr.FormulaDataset(idx_list, max_len, t=True)
