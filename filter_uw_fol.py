@@ -200,8 +200,8 @@ def main():
             if true_count == 1:
                 char_idx = binder_lookup[removed_node]
                 indexes = [i for i, char in enumerate(f.__str__()) if char == f.__str__()[char_idx]]
-                for idx in indexes:
-                    unique_witness_results.append((idx, witness))
+                for id in indexes:
+                    unique_witness_results.append((id, witness))
 
         if unique_witness_results:
             filtered_dev.append((idx, unique_witness_results))
