@@ -1,9 +1,70 @@
+# assumes that there are more variables in the system than the maximum possible amount of Ex in the max_depth (otherwise can't substitute for unseen var)
+
 import pickle
 from pathlib import Path
 import numpy as np
 from classes_fol import PredApp, Neg, Ex, Conj, V, P, InterpretationFunc, Model, VarAssignment
 from tf_generation_fol import form_le, setup
 import argparse
+
+def collect_var_names(formula):
+    names = set()
+    def visit(f):
+        if isinstance(f, PredApp):
+            names.update(a._name for a in f._args if isinstance(a, V))
+        elif isinstance(f, Neg):
+            visit(f._phi)
+        elif isinstance(f, Ex):
+            names.add(f._v._name)
+            visit(f._phi)
+        elif isinstance(f, Conj):
+            visit(f._phi); visit(f._psi)
+    visit(formula)
+    return names
+
+def make_fresh_name_getter(used_names, all_variable_names):
+    # only draws from the generator's own alphabet (params['variables']),
+    # so every fresh name is already covered by s_dict / f_assignments
+    pool = iter(all_variable_names)
+    def get_fresh():
+        for name in pool:
+            if name not in used_names:
+                used_names.add(name)
+                return name
+        raise RuntimeError(
+            "Ran out of spare variable names for deduplication; "
+            "increase number_vr relative to max_depth."
+        )
+    return get_fresh
+
+def deduplicate_quantifiers(formula, all_variable_names):
+    # alpha-renames shadowed existentials so no bound variable name is reused
+    # within the scope of another quantifier binding the same name
+    used_names = collect_var_names(formula)
+    get_fresh = make_fresh_name_getter(used_names, all_variable_names)
+
+    def visit(f, active):
+        if isinstance(f, PredApp):
+            new_args = [active.get(a._name, a) if isinstance(a, V) else a
+                        for a in f._args]
+            return PredApp(f._pred, new_args)
+        elif isinstance(f, Neg):
+            return Neg(visit(f._phi, active))
+        elif isinstance(f, Conj):
+            return Conj(visit(f._phi, active), visit(f._psi, active))
+        elif isinstance(f, Ex):
+            vname = f._v._name
+            if vname in active:
+                new_v = V(get_fresh())
+                new_active = {**active, vname: new_v}
+                return Ex(new_v, visit(f._phi, new_active))
+            else:
+                new_active = {**active, vname: f._v}
+                return Ex(f._v, visit(f._phi, new_active))
+        else:
+            raise TypeError(f"Unhandled formula type: {type(f)}")
+
+    return visit(formula, {})
 
 def remove_one_ex_tagged(formula):
     if isinstance(formula, PredApp):
@@ -112,52 +173,46 @@ def main():
     print("len(set(dev_true_indices)):", len(set(dev_true_indices)))  # check for dupes in the source itself
 
     filtered_dev = []
-    seen_idx_this_pass = set()
     total_processed = 0
-    n_passes = 0
     t0 = time.time()
 
-    while len(filtered_dev) < target_count:
-        n_passes += 1
-        added_this_pass = 0
-        pass_seen = set()
+    # single deterministic sweep: idx -> formula -> model -> qualifies is a pure
+    # function of idx, so repeated passes over dev_true_indices can never change
+    # the outcome. dedup runs once per idx, right before filtering.
+    for idx in dev_true_indices:
+        total_processed += 1
 
-        for idx in dev_true_indices:
-            pass_seen.add(idx)
-            total_processed += 1
+        f = form_le(idx, 0, [])
+        f = deduplicate_quantifiers(f, variables)  # <-- dedup pass, then filter
+        variants, full_str, binder_indices = remove_one_ex_tagged(f)
+        binder_lookup = dict(binder_indices)
 
-            f = form_le(idx, 0, [])
-            variants, full_str, binder_indices = remove_one_ex_tagged(f)
-            binder_lookup = dict(binder_indices)
+        unique_witness_results = []
+        for variant, removed_node in variants:
+            true_count = 0
+            witness = None
+            for i in domain:
+                if variant.check(model, VarAssignment(s_dict[i])):
+                    true_count += 1
+                    witness = i
+                    if true_count > 1:
+                        break
+            if true_count == 1:
+                char_idx = binder_lookup[removed_node]
+                indexes = [i for i, char in enumerate(f.__str__()) if char == f.__str__()[char_idx]]
+                for idx in indexes:
+                    unique_witness_results.append((idx, witness))
 
-            unique_witness_results = []
-            for variant, removed_node in variants:
-                true_count = 0
-                witness = None
-                for i in domain:
-                    if variant.check(model, VarAssignment(s_dict[i])):
-                        true_count += 1
-                        witness = i
-                        if true_count > 1:
-                            break
-                if true_count == 1:
-                    char_idx = binder_lookup[removed_node]
-                    unique_witness_results.append((char_idx, witness))
+        if unique_witness_results:
+            filtered_dev.append((idx, unique_witness_results))
+            if len(filtered_dev) >= target_count:
+                break
 
-            if unique_witness_results:
-                added_this_pass += 1
-                if len(filtered_dev) >= target_count:
-                    break
+        if total_processed % 500 == 0:
+            print(f"processed = {total_processed}, filtered_dev so far = {len(filtered_dev)}, "
+                  f"elapsed = {time.time()-t0:.1f}s")
 
-        print(f"pass {n_passes}: distinct idx seen this pass = {len(pass_seen)}, "
-            f"added this pass = {added_this_pass}, total_processed so far = {total_processed}, "
-            f"filtered_dev so far = {len(filtered_dev)}, elapsed = {time.time()-t0:.1f}s")
-
-        if added_this_pass == 0:
-            print("No new formulas found this pass: stopping to avoid infinite loop.")
-            break
-
-    print(f"TOTAL: {total_processed} idx processed across {n_passes} pass(es), "
+    print(f"TOTAL: {total_processed} idx processed, "
         f"{len(filtered_dev)} kept, {time.time()-t0:.1f}s elapsed")
 
     # save filtered data
@@ -166,7 +221,3 @@ def main():
 
     print(f"Filtered dev_t: {len(filtered_dev)} formulas kept (out of {len(dev_true_indices)})")
     print(f"Saved to {data_dir / 'dev_data.pkl'}")
-
-
-if __name__ == "__main__":
-    main()
