@@ -221,3 +221,6 @@ def main():
 
     print(f"Filtered dev_t: {len(filtered_dev)} formulas kept (out of {len(dev_true_indices)})")
     print(f"Saved to {data_dir / 'dev_data.pkl'}")
+
+if __name__ == "__main__":
+    main()
