@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import csv
 import pickle
@@ -78,22 +79,31 @@ def load_interpretation(project_root: Path, dataset_folder: str):
     return extension
 
 
-def pairwise_overlap_and_distance(pred_names, pred_vecs, extension, metric="jaccard"):
-    rows = []
+def same_arity_pairs(pred_names, pred_arities, pred_vecs, extension):
+    """
+    Pairwise tuple overlap (raw intersection count) and cosine similarity,
+    restricted to pairs of predicates sharing the same arity. Cross-arity
+    pairs are not computed at all: they aren't part of this design (see
+    module docstring), so there's no reason to spend time/plot space on
+    them here.
+    """
+    rows_by_arity = {}
+    name_to_idx = {n: i for i, n in enumerate(pred_names)}
     for i, j in combinations(range(len(pred_names)), 2):
         n1, n2 = pred_names[i], pred_names[j]
-        e1, e2 = extension.get(n1, set()), extension.get(n2, set())
-        inter = len(e1 & e2)
-        union = len(e1 | e2)
-        jaccard = inter / union if union else 0.0
-        overlap = jaccard if metric == "jaccard" else inter
+        a1, a2 = pred_arities[n1], pred_arities[n2]
+        if a1 != a2:
+            continue
 
-        v1, v2 = pred_vecs[i], pred_vecs[j]
+        e1, e2 = extension.get(n1, set()), extension.get(n2, set())
+        overlap = len(e1 & e2)  # raw tuple-intersection count ("tuple overlap")
+
+        v1, v2 = pred_vecs[name_to_idx[n1]], pred_vecs[name_to_idx[n2]]
         cos_sim = float(np.dot(v1, v2) /
                          (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-12))
-        cos_dist = 1.0 - cos_sim
-        rows.append((n1, n2, inter, jaccard, overlap, cos_dist))
-    return rows
+
+        rows_by_arity.setdefault(a1, []).append((n1, n2, overlap, cos_sim))
+    return rows_by_arity
 
 
 def _rankdata(a: np.ndarray):
@@ -116,12 +126,10 @@ def _rankdata(a: np.ndarray):
     return ranks
 
 
-def correlation(xs, ys):
+def spearman(xs, ys):
     xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
-    pearson = float(np.corrcoef(xs, ys)[0, 1])
     rx, ry = _rankdata(xs), _rankdata(ys)
-    spearman = float(np.corrcoef(rx, ry)[0, 1])
-    return pearson, spearman
+    return float(np.corrcoef(rx, ry)[0, 1])
 
 
 def build_model(run_params, vocab_size, max_len, pad_id):
@@ -147,7 +155,6 @@ def main():
     ap.add_argument("--model_dir", type=str, required=True)
     ap.add_argument("--epoch", default="best")
     ap.add_argument("--output", type=str, default="predicate_embeddings.png")
-    ap.add_argument("--overlap_metric", choices=["jaccard", "count"], default="jaccard")
     args = ap.parse_args()
 
     project_root = Path(__file__).resolve().parent
@@ -180,8 +187,10 @@ def main():
     pred_ids = [tok_to_id[n] for n in pred_names]
     pred_vecs = tok_emb[pred_ids]
 
+    # --- unchanged: general t-SNE layout of predicate embeddings ---
+    # Kept as-is; it's a different visualization from the overlap
+    # experiment below and wasn't part of what we're changing here.
     coords = reduce_to_2d(pred_vecs)
-
     arities = sorted(set(pred_arities.values()))
     cmap = plt.get_cmap("tab10")
     arity_color = {a: cmap(i % 10) for i, a in enumerate(arities)}
@@ -191,7 +200,6 @@ def main():
         color = arity_color[pred_arities[name]]
         plt.scatter(x, y, color=color, s=80)
         plt.annotate(name, (x, y), textcoords="offset points", xytext=(5, 5))
-
     handles = [plt.Line2D([0], [0], marker='o', color='w',
                            markerfacecolor=arity_color[a], markersize=10,
                            label=f"arity {a}") for a in arities]
@@ -203,43 +211,59 @@ def main():
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(args.output, dpi=150)
-    print(f"saved plot to {args.output}")
+    print(f"saved t-SNE plot to {args.output}")
 
+    # --- the actual experiment: overlap vs. embedding similarity, per arity ---
     extension = load_interpretation(project_root, run_params["dataset_folder"])
-    rows = pairwise_overlap_and_distance(pred_names, pred_vecs, extension,
-                                          metric=args.overlap_metric)
-    overlaps = [r[4] for r in rows]
-    cos_dists = [r[5] for r in rows]
-    pearson, spearman = correlation(overlaps, cos_dists)
-    print(f"pairs analyzed: {len(rows)}")
-    print(f"overlap metric: {args.overlap_metric}")
-    print(f"Pearson correlation (overlap vs cosine distance):  {pearson:.4f}")
-    print(f"Spearman correlation (overlap vs cosine distance): {spearman:.4f}")
+    rows_by_arity = same_arity_pairs(pred_names, pred_arities, pred_vecs, extension)
 
+    all_csv_rows = []
+    print(f"\n=== per-arity tuple-overlap vs. embedding-similarity ===")
+    for a in sorted(rows_by_arity.keys()):
+        group = rows_by_arity[a]
+        n1s = [r[0] for r in group]
+        n2s = [r[1] for r in group]
+        overlaps = [r[2] for r in group]
+        cos_sims = [r[3] for r in group]
+
+        print(f"\narity {a}: {len(group)} pairs, "
+              f"extension size fixed by construction for this arity")
+        if len(group) < 3:
+            print("  too few pairs to compute a meaningful correlation")
+            rho = float("nan")
+        else:
+            rho = spearman(overlaps, cos_sims)
+            print(f"  Spearman correlation (tuple overlap vs. cosine similarity): {rho:.4f}")
+
+        for n1, n2, ov, cs in zip(n1s, n2s, overlaps, cos_sims):
+            all_csv_rows.append((n1, n2, a, ov, cs))
+
+        # one figure per arity, as agreed -- pooling arities together would
+        # mix groups whose extension size (and therefore overlap scale)
+        # differs by construction across arities.
+        plt.figure(figsize=(6, 5))
+        plt.scatter(overlaps, cos_sims, alpha=0.8, color="tab:blue")
+        for n1, n2, ov, cs in zip(n1s, n2s, overlaps, cos_sims):
+            plt.annotate(f"{n1}{n2}", (ov, cs), fontsize=6,
+                         textcoords="offset points", xytext=(3, 3), alpha=0.6)
+        plt.xlabel("tuple overlap (intersection count)")
+        plt.ylabel("cosine similarity between static embeddings")
+        plt.title(f"Arity {a} predicates: overlap vs. embedding similarity\n"
+                  f"{model_dir.name} (epoch {epoch_label}), Spearman ρ={rho:.3f}")
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        arity_plot_path = f"{args.model_dir}_arity{a}_preds_plot.png"
+        plt.savefig(arity_plot_path, dpi=150)
+        print(f"  saved plot to {arity_plot_path}")
+
+    # single CSV with all same-arity pairs, arity column included so the
+    # per-arity groups can still be recovered/re-analyzed later
     pairs_csv_path = f"pairs_{args.model_dir}.csv"
     with open(pairs_csv_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["pred_1", "pred_2", "intersection_count", "jaccard",
-                    "overlap_used", "cosine_distance"])
-        w.writerows(rows)
-    print(f"saved pairwise table to {pairs_csv_path}")
-
-    plt.figure(figsize=(7, 6))
-    plt.scatter(overlaps, cos_dists, alpha=0.7)
-    for n1, n2, _inter, _jac, overlap, cdist in rows:
-        plt.annotate(f"{n1}{n2}", (overlap, cdist), fontsize=6,
-                     textcoords="offset points", xytext=(3, 3), alpha=0.6)
-    xlabel = ("Jaccard overlap of extensions" if args.overlap_metric == "jaccard"
-              else "shared individuals/groups (intersection count)")
-    plt.xlabel(xlabel)
-    plt.ylabel("cosine distance between embeddings")
-    plt.title(f"Embedding distance vs. shared interpretation\n"
-              f"Pearson r={pearson:.3f}, Spearman ρ={spearman:.3f}")
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    corr_plot_path = f"{args.model_dir}_preds_plot.png"
-    plt.savefig(corr_plot_path, dpi=150)
-    print(f"saved correlation plot to {corr_plot_path}")
+        w.writerow(["pred_1", "pred_2", "arity", "tuple_overlap", "cosine_similarity"])
+        w.writerows(all_csv_rows)
+    print(f"\nsaved pairwise table (same-arity pairs only) to {pairs_csv_path}")
 
 
 if __name__ == "__main__":

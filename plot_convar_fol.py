@@ -1,4 +1,5 @@
 import argparse
+import random
 import pickle
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vo
                 idx = idx_list[global_i + i]
                 results = positions_by_idx[idx]  # list of (char_idx, witness)
 
-                formula_str = form_le(idx, 0, []).__str__() if form_le else None
+                formula_str = form_le(idx, 0, []).__str__()
 
                 for char_idx, val in results:
                     var_name = formula_str[char_idx] if formula_str is not None else None
@@ -134,6 +135,9 @@ def main():
     parser.add_argument("--char", choices=["v","eq"], default="v", help="choose character to plot (existential quant. or the actual variable next to it)")
     parser.add_argument("--output", default=None, help="path to save the plot (png). "
                                                          "Defaults to <dataset_folder>_unique_var_tsne.png")
+    parser.add_argument("--balance", action="store_true",
+                    help="Downsample records so each variable/witness group has equal size")
+    
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -178,6 +182,27 @@ def main():
     records = extract_records(model, dataloader, idx_list, positions_by_idx, cls_model, vocab, device, form_le=form_le)
     print(f"Extracted {len(records)} unique-variable contextual representations "
           f"from {len(idx_list)} formulas.")
+    
+    if args.balance:
+        # group records by the chosen color_by attribute
+        groups = {}
+        for r in records:
+            key = r["value"] if args.color_by == "value" else r["var"]
+            groups.setdefault(key, []).append(r)
+
+        # determine number of samples per group
+        min_size = min(len(g) for g in groups.values())
+        n_per_group = min_size
+        if n_per_group > min_size:
+            n_per_group = min_size
+
+        # sample from each group
+        sampled_records = []
+        for g in groups.values():
+            sampled_records.extend(random.sample(g, n_per_group))
+        records = sampled_records
+        print(f"Balanced to {n_per_group} per group, total {len(records)} records.")
+    
 
     vectors = np.stack([r["vector"] for r in records], axis=0)
 

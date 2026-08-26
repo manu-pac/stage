@@ -110,8 +110,7 @@ def generate_worlds(predicates, domain, n_worlds, prop_tf):
         for pred in predicates:
             arity = pred.arity
             total_tuples = len(domain) ** arity
-            prob = random.uniform(0.1,prop_tf) if prop_spread else prop_tf
-            n_true = int(total_tuples * prob)
+            n_true = random.randint(2,int(total_tuples * prop_tf)) if prop_spread else int(total_tuples * prop_tf)
             sampled_indices = random.sample(range(total_tuples), n_true)
             true_tuples = frozenset(_index_to_tuple(i, domain, arity) for i in sampled_indices)
 
