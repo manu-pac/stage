@@ -99,7 +99,7 @@ def _index_to_tuple(idx, domain, arity):
         digits.append(domain[r])
     return tuple(reversed(digits))
 
-def generate_worlds(predicates, domain, n_worlds, prop_tf=0.5):
+def generate_worlds(predicates, domain, n_worlds, prop_tf):
     all_worlds = set()
     max_attempts = n_worlds * 10
     attempts = 0
@@ -110,7 +110,8 @@ def generate_worlds(predicates, domain, n_worlds, prop_tf=0.5):
         for pred in predicates:
             arity = pred.arity
             total_tuples = len(domain) ** arity
-            n_true = int(total_tuples * prop_tf)
+            prob = random.randint(0.1,prop_tf) if prop_spread else prop_tf
+            n_true = int(total_tuples * prob)
             sampled_indices = random.sample(range(total_tuples), n_true)
             true_tuples = frozenset(_index_to_tuple(i, domain, arity) for i in sampled_indices)
 
@@ -164,10 +165,11 @@ def main():
     parser.add_argument("--n_worlds", type=int, required=True)
     parser.add_argument("--folder_name", type=str, required=True)
     parser.add_argument("--prop_tf", type=float, default=0.5)
+    parser.add_argument('--prop_spread', action='store_true', default=False, help="predicates will pick BETWEEN 10 and prop_tf percent of the available tuples (varies by predicate)")
     args = parser.parse_args()
 
     global number_id, number_vr, number_pr, min_depth, max_depth, corpus_size, n_worlds, min_arity, max_arity, domain, variables, predicates, p
-    global cache, v, n_vars, act_world, alt_worlds
+    global cache, v, n_vars, act_world, alt_worlds, prop_spread
 
     number_id = args.number_id
     number_vr = args.number_vr
@@ -178,6 +180,7 @@ def main():
     n_worlds = args.n_worlds
     min_arity = args.min_arity
     max_arity = args.max_arity
+    prop_spread = args.prop_spread
 
     # define domain, variables, predicates (shared between worlds)
     domain = list(range(number_id))
